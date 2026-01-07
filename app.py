@@ -12,12 +12,9 @@ st.set_page_config(
     layout="wide"
 )
 
-# =============================================================================
-# CONFIGURATION - Update these URLs to match your GitHub repository
-# =============================================================================
+=
 GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/vivianyyen/Machine_Learning_Project/main/"
 
-# CSV file URLs - Update YOUR_USERNAME and YOUR_REPO
 CSV_FILES = {
     'weather.csv': f"{GITHUB_DATA_BASE_URL}weather.csv",
     'price2020.csv': f"{GITHUB_DATA_BASE_URL}price2020.csv",
@@ -28,9 +25,6 @@ CSV_FILES = {
     'export.csv': f"{GITHUB_DATA_BASE_URL}export.csv",
 }
 
-# Alternative: If CSVs are in the root directory, use this instead:
-# GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/"
-# =============================================================================
 
 # Title and description
 st.title("🌴 Oil Palm Price Prediction System")
