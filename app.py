@@ -15,7 +15,7 @@ st.set_page_config(
 # =============================================================================
 # CONFIGURATION - Update these URLs to match your GitHub repository
 # =============================================================================
-GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/data/"
+GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/vivianyyen/Machine_Learning_Project/main/"
 
 # CSV file URLs - Update YOUR_USERNAME and YOUR_REPO
 CSV_FILES = {
