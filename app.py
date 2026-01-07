@@ -12,8 +12,27 @@ st.set_page_config(
     layout="wide"
 )
 
-GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/vivianyyen/Machine_Learning_Project/main/"
+# =============================================================================
+# CONFIGURATION - Update these URLs to match your GitHub repository
+# =============================================================================
 
+# STEP 1: Enter GitHub username
+GITHUB_USERNAME = "vivianyyen" 
+
+# STEP 2: Enter repository name
+GITHUB_REPO = "Machine_Learning_Project"  
+
+# STEP 3: Enter your branch name 
+GITHUB_BRANCH = "main"  
+
+# STEP 4: Enter the folder where CSVs are located
+# Use "data/" if CSVs are in a data folder
+# Use "" (empty string) if CSVs are in the root directory
+
+# Build the base URL (don't modify this)
+GITHUB_DATA_BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/"
+
+# CSV file URLs (don't modify this)
 CSV_FILES = {
     'weather.csv': f"{GITHUB_DATA_BASE_URL}weather.csv",
     'price2020.csv': f"{GITHUB_DATA_BASE_URL}price2020.csv",
@@ -23,7 +42,7 @@ CSV_FILES = {
     'exchange.csv': f"{GITHUB_DATA_BASE_URL}exchange.csv",
     'export.csv': f"{GITHUB_DATA_BASE_URL}export.csv",
 }
-
+# =============================================================================
 
 # Title and description
 st.title("🌴 Oil Palm Price Prediction System")
@@ -75,6 +94,12 @@ def preprocess_data(data_dict):
             return None, None, None, None
         
         weather_df['Date'] = pd.to_datetime(weather_df['Date'])
+        # Check for duplicates and report
+        duplicates = weather_df[weather_df.duplicated(subset=['Date'], keep=False)]
+        if len(duplicates) > 0:
+            st.warning(f"⚠️ Found {len(duplicates)} duplicate dates in weather.csv. Keeping first occurrence.")
+        # Remove duplicate dates by keeping the first occurrence
+        weather_df = weather_df.drop_duplicates(subset=['Date'], keep='first')
         
         # Load price data
         price_dfs = []
@@ -84,6 +109,13 @@ def preprocess_data(data_dict):
                 price_df = data_dict[key]
                 price_df['Date'] = pd.to_datetime(price_df['Date'], errors='coerce')
                 price_df.dropna(subset=['Date'], inplace=True)
+                
+                # Check for duplicates and report
+                duplicates = price_df[price_df.duplicated(subset=['Date'], keep=False)]
+                if len(duplicates) > 0:
+                    st.warning(f"⚠️ Found {len(duplicates)} duplicate dates in {key}. Keeping first occurrence.")
+                # Remove duplicate dates by keeping the first occurrence
+                price_df = price_df.drop_duplicates(subset=['Date'], keep='first')
                 
                 # Expand to daily frequency
                 price_df = price_df.set_index('Date')
@@ -102,6 +134,12 @@ def preprocess_data(data_dict):
         if ipi_df is not None:
             ipi_df['Date'] = pd.to_datetime(ipi_df['Date'], errors='coerce')
             ipi_df.dropna(subset=['Date'], inplace=True)
+            # Check for duplicates and report
+            duplicates = ipi_df[ipi_df.duplicated(subset=['Date'], keep=False)]
+            if len(duplicates) > 0:
+                st.warning(f"⚠️ Found {len(duplicates)} duplicate dates in ipi.csv. Keeping first occurrence.")
+            # Remove duplicate dates by keeping the first occurrence
+            ipi_df = ipi_df.drop_duplicates(subset=['Date'], keep='first')
             ipi_df = ipi_df.set_index('Date')
             ipi_expanded = ipi_df.resample('D').ffill().reset_index()
         else:
@@ -113,6 +151,12 @@ def preprocess_data(data_dict):
         if exchange_df is not None:
             exchange_df['Date'] = pd.to_datetime(exchange_df['Date'], errors='coerce')
             exchange_df.dropna(subset=['Date'], inplace=True)
+            # Check for duplicates and report
+            duplicates = exchange_df[exchange_df.duplicated(subset=['Date'], keep=False)]
+            if len(duplicates) > 0:
+                st.warning(f"⚠️ Found {len(duplicates)} duplicate dates in exchange.csv. Keeping first occurrence.")
+            # Remove duplicate dates by keeping the first occurrence
+            exchange_df = exchange_df.drop_duplicates(subset=['Date'], keep='first')
             exchange_df = exchange_df.set_index('Date')
             exchange_expanded = exchange_df.resample('D').ffill().reset_index()
         else:
@@ -124,6 +168,12 @@ def preprocess_data(data_dict):
         if export_df is not None:
             export_df['Date'] = pd.to_datetime(export_df['Date'], errors='coerce')
             export_df.dropna(subset=['Date'], inplace=True)
+            # Check for duplicates and report
+            duplicates = export_df[export_df.duplicated(subset=['Date'], keep=False)]
+            if len(duplicates) > 0:
+                st.warning(f"⚠️ Found {len(duplicates)} duplicate dates in export.csv. Keeping first occurrence.")
+            # Remove duplicate dates by keeping the first occurrence
+            export_df = export_df.drop_duplicates(subset=['Date'], keep='first')
             export_df = export_df.set_index('Date')
             export_expanded = export_df.resample('D').ffill().reset_index()
         else:
@@ -183,24 +233,43 @@ def preprocess_data(data_dict):
 if page == "Train Models":
     st.header("📊 Train Machine Learning Models")
     
+    # Check if configuration has been updated
+    if GITHUB_USERNAME == "YOUR_USERNAME" or GITHUB_REPO == "YOUR_REPO":
+        st.error("⚠️ **Configuration Required!**")
+        st.warning("""
+        You need to update the GitHub configuration in the `app.py` file.
+        
+        Open `app.py` and update lines 16-28 with your information:
+        - `GITHUB_USERNAME` = your GitHub username
+        - `GITHUB_REPO` = your repository name
+        - `GITHUB_BRANCH` = your branch (usually "main")
+        - `CSV_FOLDER` = folder where CSVs are ("data/" or "")
+        """)
+        st.stop()
+    
     st.info("📁 Data will be loaded automatically from GitHub repository")
     
     # Show configuration info
-    with st.expander("ℹ️ Data Source Configuration"):
+    with st.expander("ℹ️ Current Configuration"):
         st.code(f"""
-GitHub Base URL: {GITHUB_DATA_BASE_URL}
+GitHub Username: {GITHUB_USERNAME}
+Repository Name: {GITHUB_REPO}
+Branch: {GITHUB_BRANCH}
+CSV Folder: {CSV_FOLDER if CSV_FOLDER else "(root directory)"}
 
-Expected CSV files:
-- weather.csv
-- price2020.csv
-- price2021.csv
-- price2022.csv
-- ipi.csv
-- exchange.csv
-- export.csv
+Full Base URL: {GITHUB_DATA_BASE_URL}
 
-If you see errors, update the URLs in the code configuration section.
+Example URL for weather.csv:
+{GITHUB_DATA_BASE_URL}weather.csv
+
+✅ Test this URL in your browser - you should see CSV content.
+❌ If you get 404, check the configuration above.
         """)
+        
+        st.markdown("**Quick Test:**")
+        test_url = f"{GITHUB_DATA_BASE_URL}weather.csv"
+        st.markdown(f"[Click here to test weather.csv URL]({test_url})")
+        st.caption("If this opens and shows CSV content, your configuration is correct!")
     
     if st.button("📥 Load Data & Start Training", type="primary"):
         # Load data from GitHub
