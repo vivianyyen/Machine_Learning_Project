@@ -12,7 +12,6 @@ st.set_page_config(
     layout="wide"
 )
 
-=
 GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/vivianyyen/Machine_Learning_Project/main/"
 
 CSV_FILES = {
