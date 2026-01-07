@@ -30,7 +30,7 @@ GITHUB_BRANCH = "main"
 # Use "" (empty string) if CSVs are in the root directory
 
 # Build the base URL (don't modify this)
-GITHUB_DATA_BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/"
+GITHUB_DATA_BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/{CSV_FILES}"
 
 # CSV file URLs (don't modify this)
 CSV_FILES = {
