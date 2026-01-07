@@ -15,17 +15,17 @@ st.set_page_config(
 # =============================================================================
 # CONFIGURATION - Update these URLs to match your GitHub repository
 # =============================================================================
-GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/vivianyyen/Machine_Learning_Project/blob/main/"
+GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/vivianyyen/Machine_Learning_Project/main/"
 
 # CSV file URLs - Update YOUR_USERNAME and YOUR_REPO
 CSV_FILES = {
     'weather.csv': f"{GITHUB_DATA_BASE_URL}weather.csv",
-    'price2020.csv': f"{GITHUB_DATA_BASE_URL}price_2020.csv",
-    'price2021.csv': f"{GITHUB_DATA_BASE_URL}price_2021.csv",
-    'price2022.csv': f"{GITHUB_DATA_BASE_URL}price_2022.csv",
-    'ipi.csv': f"{GITHUB_DATA_BASE_URL}production_index.csv",
-    'exchange.csv': f"{GITHUB_DATA_BASE_URL}exchange_rates.csv",
-    'export.csv': f"{GITHUB_DATA_BASE_URL}export_number.csv",
+    'price2020.csv': f"{GITHUB_DATA_BASE_URL}price2020.csv",
+    'price2021.csv': f"{GITHUB_DATA_BASE_URL}price2021.csv",
+    'price2022.csv': f"{GITHUB_DATA_BASE_URL}price2022.csv",
+    'ipi.csv': f"{GITHUB_DATA_BASE_URL}ipi.csv",
+    'exchange.csv': f"{GITHUB_DATA_BASE_URL}exchange.csv",
+    'export.csv': f"{GITHUB_DATA_BASE_URL}export.csv",
 }
 
 # Alternative: If CSVs are in the root directory, use this instead:
