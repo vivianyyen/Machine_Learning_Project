@@ -12,6 +12,26 @@ st.set_page_config(
     layout="wide"
 )
 
+# =============================================================================
+# CONFIGURATION - Update these URLs to match your GitHub repository
+# =============================================================================
+GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/data/"
+
+# CSV file URLs - Update YOUR_USERNAME and YOUR_REPO
+CSV_FILES = {
+    'weather.csv': f"{GITHUB_DATA_BASE_URL}weather.csv",
+    'price2020.csv': f"{GITHUB_DATA_BASE_URL}price_2020.csv",
+    'price2021.csv': f"{GITHUB_DATA_BASE_URL}price_2021.csv",
+    'price2022.csv': f"{GITHUB_DATA_BASE_URL}price_2022.csv",
+    'ipi.csv': f"{GITHUB_DATA_BASE_URL}production_index.csv",
+    'exchange.csv': f"{GITHUB_DATA_BASE_URL}exchange_rates.csv",
+    'export.csv': f"{GITHUB_DATA_BASE_URL}export_number.csv",
+}
+
+# Alternative: If CSVs are in the root directory, use this instead:
+# GITHUB_DATA_BASE_URL = "https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/"
+# =============================================================================
+
 # Title and description
 st.title("🌴 Oil Palm Price Prediction System")
 st.markdown("""
@@ -23,25 +43,34 @@ export data, and currency exchange rates using machine learning models.
 st.sidebar.header("Navigation")
 page = st.sidebar.radio("Go to", ["Train Models", "Make Predictions", "Model Comparison"])
 
-# Helper function to load data
+# Helper function to load data from GitHub
 @st.cache_data
-def load_data(uploaded_files):
-    """Load and merge all uploaded data files"""
-    if len(uploaded_files) < 7:
-        st.error("Please upload all 7 required files!")
-        return None
+def load_data_from_github():
+    """Load CSV files directly from GitHub repository"""
+    data_dict = {}
     
-    try:
-        # Load each file
-        data_dict = {}
-        for file in uploaded_files:
-            df = pd.read_csv(file)
-            data_dict[file.name] = df
+    with st.spinner("Loading data from GitHub..."):
+        progress_bar = st.progress(0)
+        status_text = st.empty()
         
-        return data_dict
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-        return None
+        total_files = len(CSV_FILES)
+        for idx, (filename, url) in enumerate(CSV_FILES.items()):
+            try:
+                status_text.text(f"Loading {filename}...")
+                df = pd.read_csv(url)
+                data_dict[filename] = df
+                progress_bar.progress((idx + 1) / total_files)
+            except Exception as e:
+                st.error(f"Error loading {filename}: {str(e)}")
+                st.error(f"URL attempted: {url}")
+                st.warning("Please check your GitHub URLs in the configuration section of the code.")
+                return None
+        
+        status_text.text("All files loaded successfully!")
+        progress_bar.empty()
+        status_text.empty()
+    
+    return data_dict
 
 def preprocess_data(data_dict):
     """Preprocess and merge all datasets"""
@@ -161,50 +190,50 @@ def preprocess_data(data_dict):
 if page == "Train Models":
     st.header("📊 Train Machine Learning Models")
     
-    st.markdown("""
-    ### Required Data Files (CSV format):
-    1. **weather.csv** - Weather data with Date column
-    2. **price2020.csv** - Price data for 2020
-    3. **price2021.csv** - Price data for 2021
-    4. **price2022.csv** - Price data for 2022
-    5. **ipi.csv** - Industrial Production Index
-    6. **exchange.csv** - Currency exchange rates
-    7. **export.csv** - Export data
-    """)
+    st.info("📁 Data will be loaded automatically from GitHub repository")
     
-    uploaded_files = st.file_uploader(
-        "Upload all 7 CSV files",
-        type=['csv'],
-        accept_multiple_files=True
-    )
+    # Show configuration info
+    with st.expander("ℹ️ Data Source Configuration"):
+        st.code(f"""
+GitHub Base URL: {GITHUB_DATA_BASE_URL}
+
+Expected CSV files:
+- weather.csv
+- price2020.csv
+- price2021.csv
+- price2022.csv
+- ipi.csv
+- exchange.csv
+- export.csv
+
+If you see errors, update the URLs in the code configuration section.
+        """)
     
-    if uploaded_files and len(uploaded_files) == 7:
-        with st.spinner("Loading and preprocessing data..."):
-            data_dict = {}
-            for file in uploaded_files:
-                df = pd.read_csv(file)
-                data_dict[file.name] = df
-            
-            X, y, df_full, feature_names = preprocess_data(data_dict)
+    if st.button("📥 Load Data & Start Training", type="primary"):
+        # Load data from GitHub
+        data_dict = load_data_from_github()
         
-        if X is not None and y is not None:
-            st.success(f"✅ Data loaded successfully! Total samples: {len(X)}")
+        if data_dict is not None:
+            with st.spinner("Processing data..."):
+                X, y, df_full, feature_names = preprocess_data(data_dict)
             
-            # Display data info
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Total Features", X.shape[1])
-            with col2:
-                st.metric("Total Samples", X.shape[0])
-            with col3:
-                st.metric("Price Range", f"RM{y.min():.2f} - RM{y.max():.2f}")
-            
-            # Show sample data
-            with st.expander("📋 View Sample Data"):
-                st.dataframe(df_full.head(10))
-            
-            # Train models
-            if st.button("🚀 Train Models", type="primary"):
+            if X is not None and y is not None:
+                st.success(f"✅ Data loaded successfully! Total samples: {len(X)}")
+                
+                # Display data info
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.metric("Total Features", X.shape[1])
+                with col2:
+                    st.metric("Total Samples", X.shape[0])
+                with col3:
+                    st.metric("Price Range", f"RM{y.min():.2f} - RM{y.max():.2f}")
+                
+                # Show sample data
+                with st.expander("📋 View Sample Data"):
+                    st.dataframe(df_full.head(10))
+                
+                # Train models
                 from sklearn.model_selection import train_test_split
                 from sklearn.preprocessing import StandardScaler
                 from sklearn.feature_selection import RFE
@@ -267,12 +296,8 @@ if page == "Train Models":
                         status_text.text(f"Training {name}...")
                         
                         # Train
-                        if name in ['SVR', 'MLP']:
-                            model.fit(X_train_rfe, y_train)
-                            pred = model.predict(X_test_rfe)
-                        else:
-                            model.fit(X_train_rfe, y_train)
-                            pred = model.predict(X_test_rfe)
+                        model.fit(X_train_rfe, y_train)
+                        pred = model.predict(X_test_rfe)
                         
                         # Evaluate
                         rmse = np.sqrt(mean_squared_error(y_test, pred))
