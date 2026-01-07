@@ -30,7 +30,7 @@ GITHUB_BRANCH = "main"
 # Use "" (empty string) if CSVs are in the root directory
 
 # Build the base URL (don't modify this)
-GITHUB_DATA_BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/{CSV_FILES}"
+GITHUB_DATA_BASE_URL = f"https://raw.githubusercontent.com/{GITHUB_USERNAME}/{GITHUB_REPO}/{GITHUB_BRANCH}/"
 
 # CSV file URLs (don't modify this)
 CSV_FILES = {
@@ -243,7 +243,6 @@ if page == "Train Models":
         - `GITHUB_USERNAME` = your GitHub username
         - `GITHUB_REPO` = your repository name
         - `GITHUB_BRANCH` = your branch (usually "main")
-        - `CSV_FOLDER` = folder where CSVs are ("data/" or "")
         """)
         st.stop()
     
@@ -255,7 +254,6 @@ if page == "Train Models":
 GitHub Username: {GITHUB_USERNAME}
 Repository Name: {GITHUB_REPO}
 Branch: {GITHUB_BRANCH}
-CSV Folder: {CSV_FOLDER if CSV_FOLDER else "(root directory)"}
 
 Full Base URL: {GITHUB_DATA_BASE_URL}
 
