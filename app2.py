@@ -345,9 +345,67 @@ if page == "Data Overview":
     
     col1, col2 = st.columns(2)
     
-    with col1:
-        st.subheader("📋 Data Sample")
-        st.dataframe(df.head(10), use_container_width=True)
+# Update all instances in the Data Overview section:
+
+with col1:
+    st.subheader("📋 Data Sample")
+    st.dataframe(df.head(10), width='stretch')  # Changed from use_container_width=True
+    
+# Update correlation display sections:
+
+st.dataframe(top_pos.style.format({'Correlation': '{:.3f}'}), width='stretch')  # Changed
+
+st.dataframe(top_neg.style.format({'Correlation': '{:.3f}'}), width='stretch')  # Changed
+
+# Update the boxplot dataframes:
+
+st.dataframe(corr_df.style.format({'Correlation': '{:.3f}'})
+            .applymap(highlight_correlation, subset=['Correlation']),
+            width='stretch')  # Changed
+
+# Update Model Predictions section displays:
+
+st.dataframe(results_df.style.format({
+    'Actual': '${:.2f}',
+    'Predicted': '${:.2f}',
+    'Error': '${:.2f}',
+    'Error %': '{:.1f}%'
+}), width='stretch')  # Changed
+
+# Update Results Comparison section displays:
+
+st.dataframe(
+    perf_df.style.format({
+        'R²': '{:.4f}',
+        'RMSE': '{:.2f}',
+        'MAE': '{:.2f}'
+    }).applymap(highlight_r2, subset=['R²']),
+    width='stretch'  # Changed
+)
+
+st.dataframe(
+    comp_df.style.format({
+        'R²': '{:.4f}',
+        'RMSE': '{:.2f}',
+        'MAE': '{:.2f}'
+    }).apply(lambda x: ['background-color: #e8f5e9' if v == 'Tuned' else 
+                       'background-color: #fff3e0' for v in x], 
+            subset=['Type']),
+    width='stretch'  # Changed
+)
+
+# Update the correlation dataframe display:
+
+st.dataframe(
+    corr_df.style.format({'Correlation': '{:.3f}'})
+    .applymap(highlight_correlation, subset=['Correlation']),
+    width='stretch'  # Changed
+)
+
+# Update the feature importance display (if present):
+
+st.dataframe(importance.head(10).style.format({'Importance': '{:.4f}'}), 
+           width='stretch')  # Changed
     
     with col2:
         st.subheader("📊 Data Information")
