@@ -78,7 +78,7 @@ The system integrates weather data, production indices, exchange rates, and expo
 
 # Sidebar for navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to:", ["📊 Data Overview", "🤖 Model Predictions", "📈 Results Comparison", "⚙️ Hyperparameter Tuning"])
+page = st.sidebar.radio("Go to:", ["Data Overview", "Model Predictions", "Results Comparison", "Hyperparameter Tuning"])
 
 # Cache data loading
 @st.cache_data
@@ -401,18 +401,15 @@ def train_models_basic(X_train, y_train, X_test, y_test):
         random_state=42,
         n_jobs=-1
     )
+    start_time = time.time
     rf.fit(X_train_scaled, y_train)
     models['Random Forest'] = rf
-    
+    end_time = time.time
+    training_time_rf = end_time - start_time
     # Calculate metrics
     y_train_pred = rf.predict(X_train_scaled)
     y_test_pred = rf.predict(X_test_scaled)
     
-    train_metrics['Random Forest'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
     
     test_metrics['Random Forest'] = {
         'R²': r2_score(y_test, y_test_pred),
@@ -430,18 +427,16 @@ def train_models_basic(X_train, y_train, X_test, y_test):
         random_state=42,
         n_jobs=-1
     )
+    start_time = time.time
     xgb.fit(X_train_scaled, y_train)
     models['XGBoost'] = xgb
+    end_time = time.time
+    training_time_xgb = end_time - start_time
     
     # Calculate metrics
     y_train_pred = xgb.predict(X_train_scaled)
     y_test_pred = xgb.predict(X_test_scaled)
     
-    train_metrics['XGBoost'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
     
     test_metrics['XGBoost'] = {
         'R²': r2_score(y_test, y_test_pred),
@@ -456,18 +451,16 @@ def train_models_basic(X_train, y_train, X_test, y_test):
         max_depth=3,
         random_state=42
     )
+    start_time = time.time
     gbr.fit(X_train_scaled, y_train)
     models['Gradient Boosting'] = gbr
+    end_time = time.time
+    training_time_gbr= end_time - start_time
+
     
     # Calculate metrics
     y_train_pred = gbr.predict(X_train_scaled)
     y_test_pred = gbr.predict(X_test_scaled)
-    
-    train_metrics['Gradient Boosting'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
     
     test_metrics['Gradient Boosting'] = {
         'R²': r2_score(y_test, y_test_pred),
@@ -477,18 +470,16 @@ def train_models_basic(X_train, y_train, X_test, y_test):
     
     # 4. SVR (Support Vector Regression)
     svr = SVR(kernel='rbf', C=10, epsilon=0.1)
+    start_time = time.time
     svr.fit(X_train_scaled, y_train)
     models['SVR'] = svr
+    end_time = time.time
+    training_time_svr = end_time - start_time
     
     # Calculate metrics
     y_train_pred = svr.predict(X_train_scaled)
     y_test_pred = svr.predict(X_test_scaled)
     
-    train_metrics['SVR'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
     
     test_metrics['SVR'] = {
         'R²': r2_score(y_test, y_test_pred),
@@ -502,18 +493,15 @@ def train_models_basic(X_train, y_train, X_test, y_test):
         min_samples_leaf=5,
         random_state=42
     )
+    start_time = time.time
     dt.fit(X_train_scaled, y_train)
     models['Decision Tree'] = dt
+    end_time = time.time
+    training_time_dt = end_time - start_time
     
     # Calculate metrics
     y_train_pred = dt.predict(X_train_scaled)
     y_test_pred = dt.predict(X_test_scaled)
-    
-    train_metrics['Decision Tree'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
     
     test_metrics['Decision Tree'] = {
         'R²': r2_score(y_test, y_test_pred),
@@ -579,6 +567,7 @@ if page == "📊 Data Overview":
 
 elif page == "🤖 Model Predictions":
     st.markdown('<h2 class="sub-header">Model Training & Prediction</h2>', unsafe_allow_html=True)
+    @st.cache_data
     
     if 'Price' not in df.columns:
         st.error("'Price' column not found in dataset. Cannot proceed with modeling.")
@@ -629,6 +618,7 @@ elif page == "🤖 Model Predictions":
             
             # Train models button
             if st.button("🚀 Train All Models", type="primary"):
+                @st.cache_data
                 with st.spinner("Training models... This may take a few minutes."):
                     if use_hyperparameter_tuning:
                         models, best_params, train_metrics, test_metrics, scaler = train_models_with_tuning(
@@ -651,6 +641,7 @@ elif page == "🤖 Model Predictions":
                             for model_name, params in best_params.items():
                                 st.write(f"**{model_name}:**")
                                 st.json(params)
+                                @st.cache_data
                     
                     # Store metrics in session state for comparison page
                     st.session_state['train_metrics'] = train_metrics
