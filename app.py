@@ -1,4 +1,4 @@
-## app.py
+# app.py
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -895,24 +895,6 @@ elif page == "Results Comparison":
                     st.write("2. Balanced error metrics")
                     st.write("3. Reliable predictions")
         
-        # Export results option
-        st.subheader("📥 Export Results")
-        
-        # Create export DataFrame
-        export_df = results_df.copy()
-        export_df['R²'] = export_df['R²'].round(4)
-        export_df['RMSE'] = export_df['RMSE'].round(2)
-        export_df['MAE'] = export_df['MAE'].round(2)
-        
-        csv = export_df.to_csv(index=False)
-        
-        st.download_button(
-            label="💾 Download Comparison Results as CSV",
-            data=csv,
-            file_name="model_comparison_results.csv",
-            mime="text/csv"
-        )
-
 # Footer
 st.markdown("---")
 st.markdown("""
