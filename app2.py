@@ -75,11 +75,6 @@ def load_data():
             # If no Date column, create one with specified date range
             df['Date'] = pd.date_range(start='2020-01-01', end='2025-05-31', periods=len(df))
         
-        # Add temporal features
-        df['Year'] = df['Date'].dt.year
-        df['Month'] = df['Date'].dt.month
-        df['Day'] = df['Date'].dt.day
-        df['DayOfYear'] = df['Date'].dt.dayofyear
         
         # Check if we have a Price column
         if 'Price' not in df.columns:
