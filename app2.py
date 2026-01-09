@@ -454,35 +454,6 @@ if page == "Data Overview":
         with cols[3]:
             st.metric("Max", f"${price_stats['max']:.2f}")
     
-    # Correlation analysis
-    st.subheader("🔗 Correlation with Price")
-    if 'Price' in df.columns:
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        correlations = {}
-        
-        for col in numeric_cols:
-            if col != 'Price':
-                corr = df[col].corr(df['Price'])
-                correlations[col] = corr
-        
-        if correlations:
-            corr_df = pd.DataFrame.from_dict(correlations, orient='index', columns=['Correlation'])
-            corr_df = corr_df.sort_values('Correlation', ascending=False)
-            
-            # Display top and bottom correlations
-            st.write("**Top positive correlations:**")
-            top_pos = corr_df[corr_df['Correlation'] > 0].head(5)
-            if len(top_pos) > 0:
-                st.dataframe(top_pos.style.format({'Correlation': '{:.3f}'}), width='stretch')
-            else:
-                st.write("No positive correlations found")
-            
-            st.write("**Top negative correlations:**")
-            top_neg = corr_df[corr_df['Correlation'] < 0].head(5)
-            if len(top_neg) > 0:
-                st.dataframe(top_neg.style.format({'Correlation': '{:.3f}'}), width='stretch')
-            else:
-                st.write("No negative correlations found")
 
 elif page == "Model Predictions":
     st.markdown('<h2 class="sub-header">Model Training & Prediction</h2>', unsafe_allow_html=True)
