@@ -357,6 +357,21 @@ if page == "Data Overview":
             buffer.append(f"**Price Range:** ${df['Price'].min():.2f}-${df['Price'].max():.2f}")
         
         st.write("\n\n".join(buffer))
+        
+    st.subheader("📊 Statistical Summary")
+    if 'Price' in df.columns:
+        price_stats = df['Price'].describe()
+        cols = st.columns(4)
+        with cols[0]:
+            st.metric("Mean", f"${price_stats['mean']:.2f}")
+        with cols[1]:
+            st.metric("Std Dev", f"${price_stats['std']:.2f}")
+            if price_stats['std'] < 10:
+                st.caption("⚠️ Low variance!")
+        with cols[2]:
+            st.metric("Min", f"${price_stats['min']:.2f}")
+        with cols[3]:
+            st.metric("Max", f"${price_stats['max']:.2f}")
     
     # Line chart of price over time with yearly breakdown
     if 'Date' in df.columns and 'Price' in df.columns:
@@ -439,20 +454,7 @@ if page == "Data Overview":
             st.pyplot(fig2)
     
     # Basic statistics
-    st.subheader("📊 Statistical Summary")
-    if 'Price' in df.columns:
-        price_stats = df['Price'].describe()
-        cols = st.columns(4)
-        with cols[0]:
-            st.metric("Mean", f"${price_stats['mean']:.2f}")
-        with cols[1]:
-            st.metric("Std Dev", f"${price_stats['std']:.2f}")
-            if price_stats['std'] < 10:
-                st.caption("⚠️ Low variance!")
-        with cols[2]:
-            st.metric("Min", f"${price_stats['min']:.2f}")
-        with cols[3]:
-            st.metric("Max", f"${price_stats['max']:.2f}")
+    
     
 
 elif page == "Model Predictions":
