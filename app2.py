@@ -617,7 +617,6 @@ elif page == "🤖 Model Predictions":
             
             # Train models button
             if st.button("🚀 Train All Models", type="primary"):
-                @st.cache_data
                 with st.spinner("Training models... This may take a few minutes."):
                     if use_hyperparameter_tuning:
                         models, best_params, train_metrics, test_metrics, scaler = train_models_with_tuning(
@@ -640,8 +639,7 @@ elif page == "🤖 Model Predictions":
                             for model_name, params in best_params.items():
                                 st.write(f"**{model_name}:**")
                                 st.json(params)
-                                @st.cache_data
-                    
+                               
                     # Store metrics in session state for comparison page
                     st.session_state['train_metrics'] = train_metrics
                     st.session_state['test_metrics'] = test_metrics
