@@ -72,37 +72,9 @@ page = st.sidebar.radio("Go to:", ["📊 Data Overview", "🤖 Model Predictions
 
 # Cache data loading
 @st.cache_data
-def load_and_preprocess_data():
-    """Load and preprocess the dataset"""
-    try:
-        # Load all CSV files (adjust paths as needed)
-        weather_df = pd.read_csv('weather.csv')
-        price2020_df = pd.read_csv('price_2020.csv')
-        price2021_df = pd.read_csv('price_2021.csv')
-        price2022_df = pd.read_csv('price_2022.csv')
-        ipi_df = pd.read_csv('production_index.csv')
-        export_df = pd.read_csv('export_number.csv')
-        exchange_df = pd.read_csv('exchange_rates.csv')
-        
-        # Convert date columns
-        for df in [weather_df, price2020_df, price2021_df, price2022_df, ipi_df, export_df, exchange_df]:
-            if 'Date' in df.columns:
-                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-        
-        # Preprocessing steps (simplified version)
-        # Merge all dataframes
-        df = weather_df.copy()
-        
-        # Add year and month features
-        df['Year'] = df['Date'].dt.year
-        df['Month'] = df['Date'].dt.month
-        
-        # Handle missing values
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        for col in numeric_cols:
-            df[col] = df[col].fillna(df[col].median())
-        
-        return df
+def load_data():
+    df = pd.read_csv("price.csv")
+    return df
     except Exception as e:
         st.error(f"Error loading data: {e}")
         # Return sample data if files not found
@@ -122,6 +94,7 @@ def load_and_preprocess_data():
             'Month': dates.month
         })
         return df
+df = load_data()
 
 @st.cache_resource
 def train_models(X_train_scaled, y_train, selected_features):
