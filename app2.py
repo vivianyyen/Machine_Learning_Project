@@ -708,7 +708,7 @@ elif page == "📈 Results Comparison":
     # Highlight top 5 models
     def highlight_top5(row):
         if row.name < 5:
-            return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
+            return ['background-color: #009fa0; font-weight: bold'] * len(row)
         return [''] * len(row)
     
     st.dataframe(
@@ -915,7 +915,7 @@ elif page == "⚙️ Hyperparameter Tuning":
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center'>
-    <p>Developed with ❤️ using Streamlit | BSD3523 Machine Learning Project</p>
+    <p>Developed using Streamlit | BSD3523 Machine Learning Project</p>
     <p>Group: CSM1 | University Malaysia Pahang Al-Sultan Abdullah</p>
     <p style='font-size: 0.9em; color: #666;'>
         5 Models with Hyperparameter Tuning: Random Forest, XGBoost, Gradient Boosting, SVR, Decision Tree
