@@ -73,7 +73,7 @@ def load_data():
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         else:
             # If no Date column, create one with specified date range
-            df['Date'] = pd.date_range(start='2020-01-01', end='2022-05-31', periods=len(df))
+            df['Date'] = pd.date_range(start='2020-01-01', end='2025-08-25', periods=len(df))
         
         # Add temporal features
         df['Year'] = df['Date'].dt.year
@@ -345,67 +345,9 @@ if page == "Data Overview":
     
     col1, col2 = st.columns(2)
     
-# Update all instances in the Data Overview section:
-
-with col1:
-    st.subheader("📋 Data Sample")
-    st.dataframe(df.head(10), width='stretch')  # Changed from use_container_width=True
-    
-# Update correlation display sections:
-
-st.dataframe(top_pos.style.format({'Correlation': '{:.3f}'}), width='stretch')  # Changed
-
-st.dataframe(top_neg.style.format({'Correlation': '{:.3f}'}), width='stretch')  # Changed
-
-# Update the boxplot dataframes:
-
-st.dataframe(corr_df.style.format({'Correlation': '{:.3f}'})
-            .applymap(highlight_correlation, subset=['Correlation']),
-            width='stretch')  # Changed
-
-# Update Model Predictions section displays:
-
-st.dataframe(results_df.style.format({
-    'Actual': '${:.2f}',
-    'Predicted': '${:.2f}',
-    'Error': '${:.2f}',
-    'Error %': '{:.1f}%'
-}), width='stretch')  # Changed
-
-# Update Results Comparison section displays:
-
-st.dataframe(
-    perf_df.style.format({
-        'R²': '{:.4f}',
-        'RMSE': '{:.2f}',
-        'MAE': '{:.2f}'
-    }).applymap(highlight_r2, subset=['R²']),
-    width='stretch'  # Changed
-)
-
-st.dataframe(
-    comp_df.style.format({
-        'R²': '{:.4f}',
-        'RMSE': '{:.2f}',
-        'MAE': '{:.2f}'
-    }).apply(lambda x: ['background-color: #e8f5e9' if v == 'Tuned' else 
-                       'background-color: #fff3e0' for v in x], 
-            subset=['Type']),
-    width='stretch'  # Changed
-)
-
-# Update the correlation dataframe display:
-
-st.dataframe(
-    corr_df.style.format({'Correlation': '{:.3f}'})
-    .applymap(highlight_correlation, subset=['Correlation']),
-    width='stretch'  # Changed
-)
-
-# Update the feature importance display (if present):
-
-st.dataframe(importance.head(10).style.format({'Importance': '{:.4f}'}), 
-           width='stretch')  # Changed
+    with col1:
+        st.subheader("📋 Data Sample")
+        st.dataframe(df.head(10), width='stretch')
     
     with col2:
         st.subheader("📊 Data Information")
@@ -536,14 +478,14 @@ st.dataframe(importance.head(10).style.format({'Importance': '{:.4f}'}),
             st.write("**Top positive correlations:**")
             top_pos = corr_df[corr_df['Correlation'] > 0].head(5)
             if len(top_pos) > 0:
-                st.dataframe(top_pos.style.format({'Correlation': '{:.3f}'}))
+                st.dataframe(top_pos.style.format({'Correlation': '{:.3f}'}), width='stretch')
             else:
                 st.write("No positive correlations found")
             
             st.write("**Top negative correlations:**")
             top_neg = corr_df[corr_df['Correlation'] < 0].head(5)
             if len(top_neg) > 0:
-                st.dataframe(top_neg.style.format({'Correlation': '{:.3f}'}))
+                st.dataframe(top_neg.style.format({'Correlation': '{:.3f}'}), width='stretch')
             else:
                 st.write("No negative correlations found")
 
@@ -656,7 +598,7 @@ elif page == "Model Predictions":
         st.dataframe(
             corr_df.style.format({'Correlation': '{:.3f}'})
             .applymap(highlight_correlation, subset=['Correlation']),
-            use_container_width=True
+            width='stretch'
         )
         
         # Warning if no strong correlations
@@ -739,7 +681,7 @@ elif page == "Model Predictions":
                 'RMSE': '{:.2f}',
                 'MAE': '{:.2f}'
             }).applymap(highlight_r2, subset=['R²']),
-            use_container_width=True
+            width='stretch'
         )
         
         # Warning about negative R²
@@ -871,7 +813,7 @@ elif page == "Model Predictions":
                     'Error': '${:.2f}',
                     'Error %': '{:.1f}%'
                 }),
-                use_container_width=True
+                width='stretch'
             )
 
 elif page == "Results Comparison":
@@ -916,7 +858,7 @@ elif page == "Results Comparison":
         }).apply(lambda x: ['background-color: #e8f5e9' if v == 'Tuned' else 
                            'background-color: #fff3e0' for v in x], 
                 subset=['Type']),
-        use_container_width=True
+        width='stretch'
     )
     
     # Analyze tuned vs untuned performance
