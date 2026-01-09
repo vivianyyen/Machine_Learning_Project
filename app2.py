@@ -761,27 +761,27 @@ elif page == "📈 Results Comparison":
         st.markdown("""
         ### Top 5 Models Analysis:
         
-        1. **XGBoost (R²: 0.905)** - Best performing model
+        1. **XGBoost** - Best performing model
            - Excellent for complex non-linear relationships
            - Handles missing values well
            - Good at capturing interactions between features
         
-        2. **Random Forest (R²: 0.895)** - Most robust
+        2. **Random Forest** - Most robust
            - Less prone to overfitting
            - Provides feature importance scores
            - Works well with both numerical and categorical data
         
-        3. **Gradient Boosting (R²: 0.881)** - Good balance
+        3. **Gradient Boosting** - Good balance
            - Sequential learning from errors
            - Often more accurate than Random Forest
            - Can be computationally expensive
         
-        4. **SVR (R²: 0.865)** - Best for linear patterns
+        4. **SVR** - Best for linear patterns
            - Effective in high-dimensional spaces
            - Memory efficient
            - Works well with clear margins of separation
         
-        5. **Decision Tree (R²: 0.848)** - Simple and interpretable
+        5. **Decision Tree** - Simple and interpretable
            - Easy to understand and interpret
            - Fast training and prediction
            - Can visualize decision paths
