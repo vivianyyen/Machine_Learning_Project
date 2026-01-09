@@ -529,9 +529,9 @@ if page == "📊 Data Overview":
         buffer.append(f"**Total Rows:** {df.shape[0]}\n\n")
         buffer.append(f"**Total Columns:** {df.shape[1]}\n\n")
         if 'Date' in df.columns:
-            buffer.append(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}")
+            buffer.append(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}\n")
         if 'Price' in df.columns:
-            buffer.append(f"**Average Price:** ${df['Price'].mean():.2f}"\n\n)
+            buffer.append(f"**Average Price:** ${df['Price'].mean():.2f}\n\n")
             buffer.append(f"**Price Range:** ${df['Price'].min():.2f} - ${df['Price'].max():.2f}\n\n")
         
         st.markdown("\n".join(buffer))
