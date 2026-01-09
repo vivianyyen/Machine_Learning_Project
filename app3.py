@@ -1,4 +1,4 @@
-# app.py
+# app.py - Focused on Tree-Based Models
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,19 +7,16 @@ import seaborn as sns
 from datetime import datetime
 import time
 import io
+import joblib
 
 # Machine Learning libraries
-from sklearn.model_selection import train_test_split, TimeSeriesSplit
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.model_selection import train_test_split, GridSearchCV, cross_val_score
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.svm import SVR
-from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import RFE
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from xgboost import XGBRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
 
 # Set page configuration
 st.set_page_config(
@@ -43,11 +40,15 @@ st.markdown("""
         margin-top: 2rem;
         margin-bottom: 1rem;
     }
-    .metric-card {
+    .model-card {
         background-color: #f0f2f6;
         padding: 1rem;
         border-radius: 10px;
         margin: 0.5rem 0;
+        border-left: 5px solid #2E8B57;
+    }
+    .tuned-model {
+        border-left: 5px solid #FF6B6B;
     }
     .stProgress > div > div > div > div {
         background-color: #2E8B57;
@@ -57,7 +58,7 @@ st.markdown("""
 
 # App title
 st.markdown('<h1 class="main-header">🌴 Palm Oil Price Prediction System</h1>', unsafe_allow_html=True)
-st.markdown("### Using Machine Learning to Predict Palm Oil Prices")
+st.markdown("### Focused on Tree-Based Machine Learning Models")
 
 # Initialize session state for data storage
 if 'data_loaded' not in st.session_state:
@@ -68,6 +69,8 @@ if 'results' not in st.session_state:
     st.session_state.results = None
 if 'predictions' not in st.session_state:
     st.session_state.predictions = {}
+if 'trained_models' not in st.session_state:
+    st.session_state.trained_models = {}
 
 # Sidebar for navigation
 st.sidebar.title("Navigation")
@@ -76,27 +79,24 @@ app_mode = st.sidebar.radio(
     ["📊 Data Overview", "🔧 Data Processing", "🤖 Model Training", "📈 Results & Visualization", "🔮 Make Predictions"]
 )
 
-def load_data():
-    """Load and prepare data"""
-    try:
-        # Try to load data
-        df = pd.read_csv("price.csv")
-        
+
 
 def preprocess_data(df):
     """Preprocess the data"""
     df_processed = df.copy()
     
     # Ensure Date is datetime
-    df_processed['Date'] = pd.to_datetime(df_processed['Date'])
-    df_processed = df_processed.sort_values('Date').reset_index(drop=True)
-    
-    # Create time-based features
-    df_processed['Year'] = df_processed['Date'].dt.year
-    df_processed['Month'] = df_processed['Date'].dt.month
-    df_processed['Day'] = df_processed['Date'].dt.day
-    df_processed['DayOfWeek'] = df_processed['Date'].dt.dayofweek
-    df_processed['Quarter'] = df_processed['Date'].dt.quarter
+    if 'Date' in df_processed.columns:
+        df_processed['Date'] = pd.to_datetime(df_processed['Date'])
+        df_processed = df_processed.sort_values('Date').reset_index(drop=True)
+        
+        # Create time-based features
+        df_processed['Year'] = df_processed['Date'].dt.year
+        df_processed['Month'] = df_processed['Date'].dt.month
+        df_processed['Day'] = df_processed['Date'].dt.day
+        df_processed['DayOfWeek'] = df_processed['Date'].dt.dayofweek
+        df_processed['Quarter'] = df_processed['Date'].dt.quarter
+        df_processed['DayOfYear'] = df_processed['Date'].dt.dayofyear
     
     # Handle missing values
     numeric_cols = df_processed.select_dtypes(include=[np.number]).columns
@@ -106,70 +106,165 @@ def preprocess_data(df):
     
     return df_processed
 
-def train_models(X_train, X_test, y_train, y_test):
-    """Train all models and return results"""
+def train_tree_models(X_train, X_test, y_train, y_test, tune_models=True):
+    """Train tree-based models with optional hyperparameter tuning"""
     results = []
     predictions = {}
-    training_times = {}
+    trained_models = {}
     
-    # Define models
-    models = {
-        'Linear Regression': LinearRegression(),
-        'Ridge Regression': Ridge(alpha=1.0),
-        'Lasso Regression': Lasso(alpha=0.01),
-        'Random Forest': RandomForestRegressor(n_estimators=100, max_depth=5, random_state=42),
-        'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42),
-        'Decision Tree': DecisionTreeRegressor(max_depth=5, random_state=42),
-        'XGBoost': XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42),
-        'SVR': SVR(kernel='rbf', C=100, epsilon=0.1),
-        'MLP': MLPRegressor(hidden_layer_sizes=(50, 25), max_iter=1000, random_state=42)
+    # Define models with their hyperparameter grids for tuning
+    models_config = {
+        'Random Forest': {
+            'untuned': RandomForestRegressor(
+                n_estimators=100,
+                max_depth=10,
+                min_samples_split=10,
+                min_samples_leaf=4,
+                random_state=42
+            ),
+            'tuned_params': {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [5, 10, 15, None],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4]
+            }
+        },
+        'Decision Tree': {
+            'untuned': DecisionTreeRegressor(
+                max_depth=5,
+                min_samples_split=10,
+                min_samples_leaf=4,
+                random_state=42
+            ),
+            'tuned_params': {
+                'max_depth': [3, 5, 7, 10, None],
+                'min_samples_split': [2, 5, 10, 20],
+                'min_samples_leaf': [1, 2, 4, 8],
+                'criterion': ['squared_error', 'friedman_mse', 'absolute_error']
+            }
+        },
+        'XGBoost': {
+            'untuned': XGBRegressor(
+                n_estimators=100,
+                max_depth=5,
+                learning_rate=0.1,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42
+            ),
+            'tuned_params': {
+                'n_estimators': [50, 100, 200],
+                'max_depth': [3, 5, 7],
+                'learning_rate': [0.01, 0.05, 0.1, 0.2],
+                'subsample': [0.6, 0.8, 1.0],
+                'colsample_bytree': [0.6, 0.8, 1.0]
+            }
+        },
+        'Gradient Boosting': {
+            'untuned': GradientBoostingRegressor(
+                n_estimators=100,
+                learning_rate=0.1,
+                max_depth=3,
+                min_samples_split=10,
+                min_samples_leaf=4,
+                random_state=42
+            ),
+            'tuned_params': {
+                'n_estimators': [50, 100, 200],
+                'learning_rate': [0.01, 0.05, 0.1, 0.2],
+                'max_depth': [2, 3, 4, 5],
+                'min_samples_split': [2, 5, 10],
+                'min_samples_leaf': [1, 2, 4]
+            }
+        }
     }
     
     # Create progress bar
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    for i, (name, model) in enumerate(models.items()):
-        status_text.text(f"Training {name}...")
+    total_models = len(models_config) * 2 if tune_models else len(models_config)
+    current_model = 0
+    
+    for model_name, config in models_config.items():
+        # Train untuned model
+        status_text.text(f"Training {model_name} (Untuned)...")
         
         start_time = time.time()
-        
-        # Create pipeline with scaling for models that need it
-        if name in ['SVR', 'MLP']:
-            pipeline = Pipeline([
-                ('scaler', StandardScaler()),
-                ('model', model)
-            ])
-        else:
-            pipeline = Pipeline([
-                ('scaler', StandardScaler()),
-                ('model', model)
-            ])
-        
-        # Train model
-        pipeline.fit(X_train, y_train)
+        untuned_model = config['untuned']
+        untuned_model.fit(X_train, y_train)
         training_time = time.time() - start_time
-        training_times[name] = training_time
         
         # Make predictions
-        y_pred = pipeline.predict(X_test)
-        predictions[name] = y_pred
+        y_pred_untuned = untuned_model.predict(X_test)
+        predictions[f"{model_name} (Untuned)"] = y_pred_untuned
+        trained_models[f"{model_name} (Untuned)"] = untuned_model
         
         # Calculate metrics
-        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-        mae = mean_absolute_error(y_test, y_pred)
-        r2 = r2_score(y_test, y_pred)
+        rmse_untuned = np.sqrt(mean_squared_error(y_test, y_pred_untuned))
+        mae_untuned = mean_absolute_error(y_test, y_pred_untuned)
+        r2_untuned = r2_score(y_test, y_pred_untuned)
         
         results.append({
-            'Model': name,
-            'RMSE': rmse,
-            'MAE': mae,
-            'R² Score': r2,
-            'Training Time (s)': training_time
+            'Model': f"{model_name} (Untuned)",
+            'Type': 'Untuned',
+            'Base Model': model_name,
+            'RMSE': rmse_untuned,
+            'MAE': mae_untuned,
+            'R² Score': r2_untuned,
+            'Training Time (s)': training_time,
+            'Tuned': False
         })
         
-        # Update progress
-        progress_bar.progress((i + 1) / len(models))
+        current_model += 1
+        progress_bar.progress(current_model / total_models)
+        
+        # Train tuned model if requested
+        if tune_models:
+            status_text.text(f"Training {model_name} (Tuned)...")
+            
+            start_time = time.time()
+            
+            # Perform grid search
+            grid_search = GridSearchCV(
+                estimator=config['untuned'],
+                param_grid=config['tuned_params'],
+                cv=5,
+                scoring='neg_mean_squared_error',
+                n_jobs=-1,
+                verbose=0
+            )
+            
+            grid_search.fit(X_train, y_train)
+            training_time = time.time() - start_time
+            
+            # Get best model
+            tuned_model = grid_search.best_estimator_
+            
+            # Make predictions
+            y_pred_tuned = tuned_model.predict(X_test)
+            predictions[f"{model_name} (Tuned)"] = y_pred_tuned
+            trained_models[f"{model_name} (Tuned)"] = tuned_model
+            
+            # Calculate metrics
+            rmse_tuned = np.sqrt(mean_squared_error(y_test, y_pred_tuned))
+            mae_tuned = mean_absolute_error(y_test, y_pred_tuned)
+            r2_tuned = r2_score(y_test, y_pred_tuned)
+            
+            results.append({
+                'Model': f"{model_name} (Tuned)",
+                'Type': 'Tuned',
+                'Base Model': model_name,
+                'RMSE': rmse_tuned,
+                'MAE': mae_tuned,
+                'R² Score': r2_tuned,
+                'Training Time (s)': training_time,
+                'Best Params': str(grid_search.best_params_),
+                'Tuned': True
+            })
+            
+            current_model += 1
+            progress_bar.progress(current_model / total_models)
     
     status_text.text("Training complete!")
     time.sleep(1)
@@ -179,7 +274,7 @@ def train_models(X_train, X_test, y_train, y_test):
     results_df = pd.DataFrame(results)
     results_df = results_df.sort_values('R² Score', ascending=False)
     
-    return results_df, predictions, training_times
+    return results_df, predictions, trained_models
 
 # Main app logic based on navigation selection
 if app_mode == "📊 Data Overview":
@@ -223,9 +318,9 @@ if app_mode == "📊 Data Overview":
             
             # Data info
             st.subheader("Data Information")
-            buffer = io.StringIO()
-            df.info(buf=buffer)
-            st.text(buffer.getvalue())
+            st.write(f"Shape: {df.shape}")
+            st.write(f"Columns: {list(df.columns)}")
+            st.write(f"Date Range: {df['Date'].min() if 'Date' in df.columns else 'N/A'} to {df['Date'].max() if 'Date' in df.columns else 'N/A'}")
         else:
             st.info("No data loaded yet. Please load data from the left panel.")
 
@@ -245,7 +340,7 @@ elif app_mode == "🔧 Data Processing":
         # Data preprocessing options
         st.subheader("Preprocessing Options")
         
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         
         with col1:
             # Date range selection
@@ -258,24 +353,19 @@ elif app_mode == "🔧 Data Processing":
                     min_value=min_date,
                     max_value=max_date
                 )
-        
-        with col2:
+            
             # Handle missing values
             missing_method = st.selectbox(
                 "Missing Value Handling",
-                ["Median Imputation", "Mean Imputation", "Forward Fill", "Drop NA"]
+                ["Median Imputation", "Mean Imputation", "Forward Fill"]
             )
         
-        with col3:
-            # Feature selection threshold
-            corr_threshold = st.slider(
-                "Feature Correlation Threshold",
-                min_value=0.0,
-                max_value=1.0,
-                value=0.1,
-                step=0.05,
-                help="Features with correlation above this threshold will be selected"
-            )
+        with col2:
+            # Feature engineering options
+            st.subheader("Feature Engineering")
+            create_lag_features = st.checkbox("Create Lag Features", value=True)
+            create_rolling_features = st.checkbox("Create Rolling Statistics", value=True)
+            create_time_features = st.checkbox("Create Time Features", value=True)
         
         # Process data button
         if st.button("Process Data", type="primary"):
@@ -291,9 +381,21 @@ elif app_mode == "🔧 Data Processing":
                         (df_processed['Date'] <= end_date)
                     ]
                 
+                # Additional feature engineering
+                if create_lag_features and 'Price' in df_processed.columns:
+                    df_processed['Price_Lag1'] = df_processed['Price'].shift(1)
+                    df_processed['Price_Lag7'] = df_processed['Price'].shift(7)
+                    df_processed['Price_Lag30'] = df_processed['Price'].shift(30)
+                
+                if create_rolling_features and 'Price' in df_processed.columns:
+                    df_processed['Price_RollingMean_7'] = df_processed['Price'].rolling(window=7).mean()
+                    df_processed['Price_RollingStd_7'] = df_processed['Price'].rolling(window=7).std()
+                
+                # Forward fill any NaN values created by lag features
+                df_processed = df_processed.fillna(method='ffill').fillna(method='bfill')
+                
                 # Store processed data
                 st.session_state.df_processed = df_processed
-                st.session_state.corr_threshold = corr_threshold
                 
                 st.success("Data processed successfully!")
                 
@@ -317,23 +419,14 @@ elif app_mode == "🔧 Data Processing":
                     
                     # Visualize correlations
                     fig, ax = plt.subplots(figsize=(10, 6))
-                    top_corr = correlations.drop('Price').head(10)
+                    top_corr = correlations.drop('Price' if 'Price' in correlations.index else []).head(15)
                     colors = ['green' if x > 0 else 'red' for x in top_corr.values]
                     ax.barh(range(len(top_corr)), top_corr.values, color=colors)
                     ax.set_yticks(range(len(top_corr)))
                     ax.set_yticklabels(top_corr.index)
                     ax.set_xlabel('Correlation with Price')
-                    ax.set_title('Top 10 Features Correlated with Price')
+                    ax.set_title('Top Features Correlated with Price')
                     st.pyplot(fig)
-                
-                # Show missing values info
-                st.subheader("Missing Values After Processing")
-                missing_df = pd.DataFrame({
-                    'Column': df_processed.columns,
-                    'Missing Values': df_processed.isnull().sum(),
-                    'Missing Percentage': (df_processed.isnull().sum() / len(df_processed) * 100).round(2)
-                })
-                st.dataframe(missing_df[missing_df['Missing Values'] > 0], use_container_width=True)
 
 elif app_mode == "🤖 Model Training":
     st.markdown('<h2 class="sub-header">Model Training</h2>', unsafe_allow_html=True)
@@ -353,7 +446,7 @@ elif app_mode == "🤖 Model Training":
                 target_var = st.selectbox(
                     "Select Target Variable",
                     df_processed.select_dtypes(include=[np.number]).columns.tolist(),
-                    index=df_processed.select_dtypes(include=[np.number]).columns.tolist().index('Price') if 'Price' in df_processed.columns else 0
+                    index=df_processed.select_dtypes(include=[np.number]).columns.tolist().index('Price')
                 )
             
             # Test size selection
@@ -365,57 +458,49 @@ elif app_mode == "🤖 Model Training":
                 step=5
             )
             
-            # Random state
-            random_state = st.number_input(
-                "Random State",
-                min_value=0,
-                max_value=100,
-                value=42
-            )
-        
-        with col2:
-            # Feature selection method
-            feature_method = st.selectbox(
-                "Feature Selection Method",
-                ["Correlation Threshold", "RFE (Recursive Feature Elimination)", "All Features"]
-            )
-            
             # Time series split option
             time_series_split = st.checkbox(
                 "Use Time Series Split",
                 value=True,
                 help="Use time-based split instead of random split for time series data"
             )
+        
+        with col2:
+            # Feature selection
+            st.subheader("Feature Selection")
+            use_all_features = st.checkbox("Use All Features", value=True)
             
-            # Number of features for RFE
-            if feature_method == "RFE (Recursive Feature Elimination)":
-                n_features = st.slider(
-                    "Number of Features to Select",
-                    min_value=3,
-                    max_value=15,
-                    value=5
+            if not use_all_features:
+                corr_threshold = st.slider(
+                    "Minimum Correlation Threshold",
+                    min_value=0.0,
+                    max_value=0.5,
+                    value=0.1,
+                    step=0.05
                 )
+            
+            # Hyperparameter tuning
+            tune_models = st.checkbox(
+                "Perform Hyperparameter Tuning",
+                value=True,
+                help="Enable Grid Search for hyperparameter optimization"
+            )
         
         # Model selection
         st.subheader("Select Models to Train")
         
         model_options = {
-            "Linear Regression": True,
-            "Ridge Regression": True,
-            "Lasso Regression": True,
             "Random Forest": True,
-            "Gradient Boosting": True,
             "Decision Tree": True,
             "XGBoost": True,
-            "SVR": True,
-            "MLP": True
+            "Gradient Boosting": True
         }
         
-        cols = st.columns(3)
+        cols = st.columns(4)
         selected_models = {}
         
         for i, (model_name, default) in enumerate(model_options.items()):
-            with cols[i % 3]:
+            with cols[i]:
                 selected_models[model_name] = st.checkbox(model_name, value=default)
         
         # Train models button
@@ -435,21 +520,15 @@ elif app_mode == "🤖 Model Training":
                     X = X.fillna(X.median())
                     
                     # Feature selection
-                    if feature_method == "Correlation Threshold":
+                    if not use_all_features:
                         # Select features based on correlation with target
                         correlations = X.corrwith(y).abs()
-                        selected_features = correlations[correlations > st.session_state.corr_threshold].index.tolist()
-                        X = X[selected_features]
-                        st.info(f"Selected {len(selected_features)} features based on correlation threshold")
-                        
-                    elif feature_method == "RFE (Recursive Feature Elimination)":
-                        # Use RFE for feature selection
-                        from sklearn.feature_selection import RFE
-                        selector = RFE(LinearRegression(), n_features_to_select=n_features)
-                        selector.fit(X, y)
-                        selected_features = X.columns[selector.support_].tolist()
-                        X = X[selected_features]
-                        st.info(f"Selected {len(selected_features)} features using RFE")
+                        selected_features = correlations[correlations > corr_threshold].index.tolist()
+                        if selected_features:
+                            X = X[selected_features]
+                            st.info(f"Selected {len(selected_features)} features based on correlation threshold")
+                        else:
+                            st.warning("No features selected with given threshold. Using all features.")
                     
                     # Split data
                     if time_series_split and 'Date' in df_processed.columns:
@@ -461,7 +540,7 @@ elif app_mode == "🤖 Model Training":
                     else:
                         # Random split
                         X_train, X_test, y_train, y_test = train_test_split(
-                            X, y, test_size=test_size/100, random_state=random_state
+                            X, y, test_size=test_size/100, random_state=42
                         )
                         st.info(f"Random split: {len(X_train)} training samples, {len(X_test)} test samples")
                     
@@ -472,26 +551,21 @@ elif app_mode == "🤖 Model Training":
                     st.session_state.y_test = y_test
                     st.session_state.selected_features = X.columns.tolist()
                     
-                    # Train selected models
-                    models_to_train = {name: model for name, model in {
-                        'Linear Regression': LinearRegression(),
-                        'Ridge Regression': Ridge(alpha=1.0),
-                        'Lasso Regression': Lasso(alpha=0.01),
-                        'Random Forest': RandomForestRegressor(n_estimators=100, max_depth=5, random_state=42),
-                        'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, learning_rate=0.1, random_state=42),
-                        'Decision Tree': DecisionTreeRegressor(max_depth=5, random_state=42),
-                        'XGBoost': XGBRegressor(n_estimators=100, max_depth=5, learning_rate=0.1, random_state=42),
-                        'SVR': SVR(kernel='rbf', C=100, epsilon=0.1),
-                        'MLP': MLPRegressor(hidden_layer_sizes=(50, 25), max_iter=1000, random_state=42)
-                    }.items() if selected_models[name]}
+                    # Filter models based on selection
+                    models_to_train = {name: True for name in selected_models if selected_models[name]}
                     
                     # Train models
-                    results, predictions, training_times = train_models(X_train, X_test, y_train, y_test)
+                    results, predictions, trained_models = train_tree_models(
+                        X_train, X_test, y_train, y_test, tune_models
+                    )
+                    
+                    # Filter results to only include selected models
+                    filtered_results = results[results['Base Model'].isin(models_to_train.keys())]
                     
                     # Store results
-                    st.session_state.results = results
+                    st.session_state.results = filtered_results
                     st.session_state.predictions = predictions
-                    st.session_state.training_times = training_times
+                    st.session_state.trained_models = trained_models
                     st.session_state.models_trained = True
                     
                     st.success("All models trained successfully!")
@@ -508,16 +582,42 @@ elif app_mode == "📈 Results & Visualization":
         
         # Display results table
         st.subheader("Model Performance Comparison")
-        st.dataframe(results.style.highlight_max(subset=['R² Score'], color='lightgreen')
-                               .highlight_min(subset=['RMSE', 'MAE'], color='lightcoral'),
-                     use_container_width=True)
+        
+        # Format results for display
+        display_results = results.copy()
+        if 'Best Params' in display_results.columns:
+            display_results = display_results.drop(columns=['Best Params'])
+        
+        # Create styled dataframe
+        st.dataframe(
+            display_results.style
+            .background_gradient(subset=['R² Score'], cmap='RdYlGn')
+            .background_gradient(subset=['RMSE', 'MAE'], cmap='RdYlGn_r')
+            .format({
+                'RMSE': '{:.2f}',
+                'MAE': '{:.2f}',
+                'R² Score': '{:.4f}',
+                'Training Time (s)': '{:.2f}'
+            }),
+            use_container_width=True,
+            height=400
+        )
+        
+        # Download results button
+        csv = results.to_csv(index=False)
+        st.download_button(
+            label="Download Results as CSV",
+            data=csv,
+            file_name="model_results.csv",
+            mime="text/csv"
+        )
         
         # Visualization options
         st.subheader("Visualizations")
         
         viz_option = st.selectbox(
             "Choose Visualization",
-            ["Model Comparison", "Actual vs Predicted", "Residual Analysis", "Feature Importance"]
+            ["Model Comparison", "Actual vs Predicted", "Feature Importance", "Error Analysis"]
         )
         
         if viz_option == "Model Comparison":
@@ -526,18 +626,41 @@ elif app_mode == "📈 Results & Visualization":
             with col1:
                 # R² Score comparison
                 fig, ax = plt.subplots(figsize=(10, 6))
-                ax.barh(results['Model'], results['R² Score'])
+                models = results['Model']
+                r2_scores = results['R² Score']
+                
+                # Color based on tuned/untuned
+                colors = ['#FF6B6B' if 'Tuned' in model else '#2E8B57' for model in models]
+                
+                bars = ax.barh(models, r2_scores, color=colors)
                 ax.set_xlabel('R² Score')
                 ax.set_title('Model R² Score Comparison')
                 ax.axvline(x=0, color='red', linestyle='--', alpha=0.5)
+                ax.set_xlim(0, max(1.0, max(r2_scores) * 1.1))
+                
+                # Add value labels
+                for bar, score in zip(bars, r2_scores):
+                    ax.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height()/2,
+                           f'{score:.4f}', va='center')
+                
                 st.pyplot(fig)
             
             with col2:
                 # RMSE comparison
                 fig, ax = plt.subplots(figsize=(10, 6))
-                ax.barh(results['Model'], results['RMSE'])
+                
+                # Color based on tuned/untuned
+                colors = ['#FF6B6B' if 'Tuned' in model else '#2E8B57' for model in models]
+                
+                bars = ax.barh(models, results['RMSE'], color=colors)
                 ax.set_xlabel('RMSE')
                 ax.set_title('Model RMSE Comparison')
+                
+                # Add value labels
+                for bar, rmse in zip(bars, results['RMSE']):
+                    ax.text(bar.get_width() + 0.01, bar.get_y() + bar.get_height()/2,
+                           f'{rmse:.2f}', va='center')
+                
                 st.pyplot(fig)
         
         elif viz_option == "Actual vs Predicted":
@@ -551,16 +674,16 @@ elif app_mode == "📈 Results & Visualization":
                 # Scatter plot
                 ax1.scatter(y_test, y_pred, alpha=0.5)
                 ax1.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--', lw=2)
-                ax1.set_xlabel('Actual Values')
-                ax1.set_ylabel('Predicted Values')
-                ax1.set_title(f'Actual vs Predicted - {selected_model}')
+                ax1.set_xlabel('Actual Price')
+                ax1.set_ylabel('Predicted Price')
+                ax1.set_title(f'Actual vs Predicted - {selected_model}\nR² = {results[results["Model"]==selected_model]["R² Score"].values[0]:.4f}')
                 ax1.grid(True)
                 
                 # Line plot for time series
                 if hasattr(st.session_state, 'df_processed') and 'Date' in st.session_state.df_processed.columns:
                     dates = st.session_state.df_processed['Date'].iloc[-len(y_test):]
-                    ax2.plot(dates, y_test.values, label='Actual', linewidth=2)
-                    ax2.plot(dates, y_pred, label='Predicted', linestyle='--', alpha=0.8)
+                    ax2.plot(dates, y_test.values, label='Actual', linewidth=2, color='blue')
+                    ax2.plot(dates, y_pred, label='Predicted', linestyle='--', alpha=0.8, color='orange')
                     ax2.set_xlabel('Date')
                     ax2.set_ylabel('Price')
                     ax2.set_title(f'Time Series Prediction - {selected_model}')
@@ -570,60 +693,90 @@ elif app_mode == "📈 Results & Visualization":
                 
                 st.pyplot(fig)
         
-        elif viz_option == "Residual Analysis":
-            selected_model = st.selectbox("Select Model for Residual Analysis", results['Model'].tolist())
+        elif viz_option == "Feature Importance":
+            selected_model = st.selectbox("Select Model for Feature Importance", 
+                                         [m for m in results['Model'].tolist() if 'Random Forest' in m or 'XGBoost' in m or 'Gradient Boosting' in m])
+            
+            if selected_model in st.session_state.trained_models:
+                model = st.session_state.trained_models[selected_model]
+                features = st.session_state.selected_features
+                
+                # Get feature importance
+                if hasattr(model, 'feature_importances_'):
+                    importances = model.feature_importances_
+                    
+                    # Create feature importance dataframe
+                    importance_df = pd.DataFrame({
+                        'Feature': features[:len(importances)],
+                        'Importance': importances
+                    }).sort_values('Importance', ascending=False).head(15)
+                    
+                    # Plot
+                    fig, ax = plt.subplots(figsize=(10, 8))
+                    bars = ax.barh(range(len(importance_df)), importance_df['Importance'])
+                    ax.set_yticks(range(len(importance_df)))
+                    ax.set_yticklabels(importance_df['Feature'])
+                    ax.set_xlabel('Feature Importance')
+                    ax.set_title(f'Feature Importance - {selected_model}')
+                    ax.invert_yaxis()
+                    
+                    # Add value labels
+                    for i, (bar, imp) in enumerate(zip(bars, importance_df['Importance'])):
+                        ax.text(bar.get_width() + 0.001, bar.get_y() + bar.get_height()/2,
+                               f'{imp:.4f}', va='center')
+                    
+                    st.pyplot(fig)
+                    
+                    # Display importance table
+                    st.dataframe(importance_df, use_container_width=True)
+                else:
+                    st.warning(f"{selected_model} does not have feature_importances_ attribute")
+            else:
+                st.warning("Please train the model first to view feature importance")
+        
+        elif viz_option == "Error Analysis":
+            selected_model = st.selectbox("Select Model for Error Analysis", results['Model'].tolist())
             
             if selected_model in predictions:
                 y_pred = predictions[selected_model]
-                residuals = y_test - y_pred
+                errors = y_test - y_pred
                 
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
+                fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 12))
                 
-                # Residual histogram
-                ax1.hist(residuals, bins=30, edgecolor='black', alpha=0.7)
+                # Error distribution
+                ax1.hist(errors, bins=30, edgecolor='black', alpha=0.7, color='skyblue')
                 ax1.axvline(x=0, color='red', linestyle='--', linewidth=2)
-                ax1.set_xlabel('Residuals')
+                ax1.set_xlabel('Prediction Error')
                 ax1.set_ylabel('Frequency')
-                ax1.set_title(f'Residual Distribution - {selected_model}')
+                ax1.set_title(f'Error Distribution - {selected_model}')
                 ax1.grid(True)
                 
-                # Residual vs Predicted
-                ax2.scatter(y_pred, residuals, alpha=0.5)
-                ax2.axhline(y=0, color='red', linestyle='--', linewidth=2)
-                ax2.set_xlabel('Predicted Values')
-                ax2.set_ylabel('Residuals')
-                ax2.set_title(f'Residuals vs Predicted - {selected_model}')
+                # QQ plot for normality check
+                from scipy import stats
+                stats.probplot(errors, dist="norm", plot=ax2)
+                ax2.set_title(f'Q-Q Plot - {selected_model}')
                 ax2.grid(True)
                 
-                st.pyplot(fig)
-        
-        elif viz_option == "Feature Importance":
-            if hasattr(st.session_state, 'selected_features'):
-                st.info("Feature importance analysis is available for tree-based models.")
+                # Error vs Predicted
+                ax3.scatter(y_pred, errors, alpha=0.5, color='green')
+                ax3.axhline(y=0, color='red', linestyle='--', linewidth=2)
+                ax3.set_xlabel('Predicted Values')
+                ax3.set_ylabel('Errors')
+                ax3.set_title(f'Errors vs Predicted - {selected_model}')
+                ax3.grid(True)
                 
-                # Try to get feature importance from Random Forest
-                if 'Random Forest' in predictions:
-                    try:
-                        from sklearn.ensemble import RandomForestRegressor
-                        
-                        # Get the trained model (would need to be stored)
-                        # For now, show correlation-based importance
-                        importance_df = pd.DataFrame({
-                            'Feature': st.session_state.selected_features,
-                            'Correlation': st.session_state.X_train.corrwith(st.session_state.y_train).values
-                        }).sort_values('Correlation', key=abs, ascending=False)
-                        
-                        fig, ax = plt.subplots(figsize=(10, 8))
-                        colors = ['green' if x > 0 else 'red' for x in importance_df['Correlation']]
-                        ax.barh(range(len(importance_df)), importance_df['Correlation'], color=colors)
-                        ax.set_yticks(range(len(importance_df)))
-                        ax.set_yticklabels(importance_df['Feature'])
-                        ax.set_xlabel('Correlation with Target')
-                        ax.set_title('Feature Correlation Importance')
-                        st.pyplot(fig)
-                        
-                    except Exception as e:
-                        st.warning(f"Could not calculate feature importance: {e}")
+                # Error over time
+                if hasattr(st.session_state, 'df_processed') and 'Date' in st.session_state.df_processed.columns:
+                    dates = st.session_state.df_processed['Date'].iloc[-len(errors):]
+                    ax4.plot(dates, errors, color='purple', alpha=0.7)
+                    ax4.axhline(y=0, color='red', linestyle='--', linewidth=2)
+                    ax4.set_xlabel('Date')
+                    ax4.set_ylabel('Prediction Error')
+                    ax4.set_title(f'Error Over Time - {selected_model}')
+                    ax4.grid(True)
+                    plt.xticks(rotation=45)
+                
+                st.pyplot(fig)
 
 elif app_mode == "🔮 Make Predictions":
     st.markdown('<h2 class="sub-header">Make New Predictions</h2>', unsafe_allow_html=True)
@@ -631,99 +784,156 @@ elif app_mode == "🔮 Make Predictions":
     if not st.session_state.models_trained:
         st.warning("Please train models first to make predictions.")
     else:
-        st.subheader("Input Features for Prediction")
-        
         # Get the best model
-        best_model_name = st.session_state.results.iloc[0]['Model']
-        st.info(f"Best performing model: **{best_model_name}**")
+        if st.session_state.results is not None and not st.session_state.results.empty:
+            best_model_name = st.session_state.results.iloc[0]['Model']
+            st.info(f"Best performing model: **{best_model_name}**")
+        else:
+            st.error("No results available. Please train models first.")
+            st.stop()
+        
+        st.subheader("Input Features for Prediction")
         
         # Create input form based on selected features
         if hasattr(st.session_state, 'selected_features'):
             features = st.session_state.selected_features
             
-            col1, col2, col3 = st.columns(3)
-            input_values = {}
-            
-            # Create input fields for each feature
-            for i, feature in enumerate(features):
-                with [col1, col2, col3][i % 3]:
-                    # Get statistics for guidance
-                    if hasattr(st.session_state, 'X_train'):
-                        mean_val = st.session_state.X_train[feature].mean()
-                        std_val = st.session_state.X_train[feature].std()
-                        min_val = st.session_state.X_train[feature].min()
-                        max_val = st.session_state.X_train[feature].max()
+            if len(features) > 0:
+                # Create 3 columns for feature inputs
+                cols = st.columns(3)
+                input_values = {}
+                
+                # Get statistics for guidance
+                if hasattr(st.session_state, 'X_train'):
+                    X_train = st.session_state.X_train
+                    
+                    # Create input fields for each feature
+                    for i, feature in enumerate(features):
+                        with cols[i % 3]:
+                            if feature in X_train.columns:
+                                mean_val = X_train[feature].mean()
+                                std_val = X_train[feature].std()
+                                min_val = X_train[feature].min()
+                                max_val = X_train[feature].max()
+                                
+                                input_values[feature] = st.number_input(
+                                    f"{feature}",
+                                    value=float(mean_val),
+                                    min_value=float(min_val * 0.5),
+                                    max_value=float(max_val * 1.5),
+                                    help=f"Range: {min_val:.2f} to {max_val:.2f}"
+                                )
+                            else:
+                                input_values[feature] = st.number_input(feature, value=0.0)
+                
+                # Model selection for prediction
+                st.subheader("Select Model for Prediction")
+                available_models = list(st.session_state.trained_models.keys())
+                selected_model_for_pred = st.selectbox(
+                    "Choose model:",
+                    available_models,
+                    index=0 if best_model_name in available_models else 0
+                )
+                
+                # Prediction button
+                if st.button("Make Prediction", type="primary"):
+                    with st.spinner("Making prediction..."):
+                        # Prepare input data
+                        input_df = pd.DataFrame([input_values])
                         
-                        input_values[feature] = st.number_input(
-                            f"{feature}",
-                            value=float(mean_val),
-                            min_value=float(min_val),
-                            max_value=float(max_val),
-                            help=f"Range: {min_val:.2f} to {max_val:.2f}, Mean: {mean_val:.2f}"
-                        )
-                    else:
-                        input_values[feature] = st.number_input(feature, value=0.0)
-        
-        # Prediction button
-        if st.button("Make Prediction", type="primary"):
-            with st.spinner("Making prediction..."):
-                # Prepare input data
-                input_df = pd.DataFrame([input_values])
-                
-                # Scale the input
-                scaler = StandardScaler()
-                scaler.fit(st.session_state.X_train)
-                input_scaled = scaler.transform(input_df)
-                
-                # Get predictions from all models
-                predictions = {}
-                
-                for model_name in st.session_state.results['Model']:
-                    # In a real app, you would load the trained models
-                    # For now, we'll show placeholder predictions
-                    base_pred = np.mean(st.session_state.y_train)
-                    predictions[model_name] = base_pred * (0.9 + 0.2 * np.random.random())
-                
-                # Display predictions
-                st.subheader("Prediction Results")
-                
-                # Create metrics display
-                cols = st.columns(len(predictions))
-                for idx, (model_name, pred_value) in enumerate(predictions.items()):
-                    with cols[idx]:
-                        st.metric(
-                            label=model_name,
-                            value=f"${pred_value:,.2f}",
-                            delta=f"{(pred_value - np.mean(st.session_state.y_train))/np.mean(st.session_state.y_train)*100:.1f}%"
-                        )
-                
-                # Show detailed prediction
-                st.subheader("Detailed Analysis")
-                
-                pred_df = pd.DataFrame({
-                    'Model': list(predictions.keys()),
-                    'Predicted Price': list(predictions.values()),
-                    'Difference from Mean': [p - np.mean(st.session_state.y_train) for p in predictions.values()],
-                    'Percent Change': [(p/np.mean(st.session_state.y_train)-1)*100 for p in predictions.values()]
-                })
-                
-                st.dataframe(pred_df, use_container_width=True)
-                
-                # Visualization
-                fig, ax = plt.subplots(figsize=(10, 6))
-                ax.bar(pred_df['Model'], pred_df['Predicted Price'])
-                ax.axhline(y=np.mean(st.session_state.y_train), color='red', linestyle='--', label='Historical Mean')
-                ax.set_ylabel('Predicted Price ($)')
-                ax.set_title('Price Predictions from Different Models')
-                ax.legend()
-                plt.xticks(rotation=45)
-                st.pyplot(fig)
+                        # Get the trained model
+                        model = st.session_state.trained_models[selected_model_for_pred]
+                        
+                        # Make prediction
+                        try:
+                            prediction = model.predict(input_df)[0]
+                            
+                            # Display prediction
+                            st.subheader("Prediction Result")
+                            
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                st.metric(
+                                    label="Predicted Price",
+                                    value=f"${prediction:,.2f}",
+                                    help=f"Prediction from {selected_model_for_pred}"
+                                )
+                            
+                            with col2:
+                                if hasattr(st.session_state, 'y_train'):
+                                    mean_price = np.mean(st.session_state.y_train)
+                                    diff = prediction - mean_price
+                                    st.metric(
+                                        label="Difference from Historical Mean",
+                                        value=f"${diff:,.2f}",
+                                        delta=f"{diff/mean_price*100:.1f}%"
+                                    )
+                            
+                            with col3:
+                                if hasattr(st.session_state, 'y_test') and len(st.session_state.y_test) > 0:
+                                    test_mean = np.mean(st.session_state.y_test)
+                                    diff_test = prediction - test_mean
+                                    st.metric(
+                                        label="Difference from Test Mean",
+                                        value=f"${diff_test:,.2f}",
+                                        delta=f"{diff_test/test_mean*100:.1f}%"
+                                    )
+                            
+                            # Additional information
+                            st.subheader("Model Information")
+                            model_info = st.session_state.results[
+                                st.session_state.results['Model'] == selected_model_for_pred
+                            ].iloc[0]
+                            
+                            info_col1, info_col2 = st.columns(2)
+                            
+                            with info_col1:
+                                st.write(f"**Model Type:** {model_info['Base Model']}")
+                                st.write(f"**Tuned:** {'Yes' if model_info['Tuned'] else 'No'}")
+                                st.write(f"**R² Score:** {model_info['R² Score']:.4f}")
+                            
+                            with info_col2:
+                                st.write(f"**RMSE:** {model_info['RMSE']:.2f}")
+                                st.write(f"**MAE:** {model_info['MAE']:.2f}")
+                                st.write(f"**Training Time:** {model_info['Training Time (s)']:.2f}s")
+                            
+                            # Feature importance visualization for this prediction
+                            if hasattr(model, 'feature_importances_'):
+                                st.subheader("Feature Contribution Analysis")
+                                
+                                importances = model.feature_importances_
+                                contrib_df = pd.DataFrame({
+                                    'Feature': features[:len(importances)],
+                                    'Importance': importances,
+                                    'Value': [input_values.get(f, 0) for f in features[:len(importances)]]
+                                }).sort_values('Importance', ascending=False).head(10)
+                                
+                                # Create horizontal bar chart
+                                fig, ax = plt.subplots(figsize=(10, 6))
+                                y_pos = np.arange(len(contrib_df))
+                                ax.barh(y_pos, contrib_df['Importance'])
+                                ax.set_yticks(y_pos)
+                                ax.set_yticklabels(contrib_df['Feature'])
+                                ax.set_xlabel('Feature Importance')
+                                ax.set_title('Top 10 Features Contributing to Prediction')
+                                ax.invert_yaxis()
+                                
+                                st.pyplot(fig)
+                        
+                        except Exception as e:
+                            st.error(f"Error making prediction: {str(e)}")
+            else:
+                st.warning("No features available for prediction. Please process and train models first.")
+        else:
+            st.warning("No features selected. Please train models first.")
 
 # Footer
 st.markdown("---")
 st.markdown("""
 <div style='text-align: center'>
     <p>🌴 <b>Palm Oil Price Prediction System</b> | CSM1 Group Project | BSD3523 Machine Learning</p>
+    <p>Focused on Tree-Based Models: Random Forest, Decision Tree, XGBoost, Gradient Boosting</p>
     <p>Group Members: YIP YOONG ENG, MUHAMMAS AMIRUL AMIER, ALIYA AFIFAH, NUR IZZATI, ALIA AYUNNI</p>
 </div>
 """, unsafe_allow_html=True)
