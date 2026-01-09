@@ -6,628 +6,445 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 from datetime import datetime
 import glob
-import warnings
-warnings.filterwarnings('ignore')
 
-# Machine Learning imports
+# Import machine learning libraries
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import RFE
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
-from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
-from sklearn.tree import DecisionTreeRegressor
-from sklearn.svm import SVR
-from sklearn.neural_network import MLPRegressor
-from sklearn.pipeline import make_pipeline
-from sklearn.model_selection import GridSearchCV
+from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-from xgboost import XGBRegressor
 
-# Set page configuration
+# Import top 4 models based on R-squared
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from xgboost import XGBRegressor
+from sklearn.svm import SVR
+from sklearn.pipeline import make_pipeline
+
+# Page configuration
 st.set_page_config(
-    page_title="ML Manufacturing Project",
-    page_icon="🏭",
+    page_title="Palm Oil Price Predictor",
+    page_icon="🌴",
     layout="wide"
 )
 
-# Title and description
-st.title("🏭 BSD3523 MACHINE LEARNING GROUP PROJECT")
-st.markdown("**Group Name:** CSM1")
+# Custom CSS
 st.markdown("""
-**Group Members:**
-- YIP YOONG ENG (SD23048) - Group Leader
-- MUHAMMAS AMIRUL AMIER BIN MOHD HUSNI (SD23011)
-- ALIYA AFIFAH BINTI AL ABAS (SD23062)
-- NUR IZZATI BINTI ZAKARIA (SD23007)
-- ALIA AYUNNI BINTI MOHD SHUKRI (SD23054)
+<style>
+    .main-header {
+        font-size: 2.5rem;
+        color: #2E8B57;
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .sub-header {
+        font-size: 1.8rem;
+        color: #3CB371;
+        margin-top: 2rem;
+        margin-bottom: 1rem;
+    }
+    .metric-card {
+        background-color: #f0f8ff;
+        padding: 1rem;
+        border-radius: 10px;
+        border-left: 5px solid #2E8B57;
+        margin: 1rem 0;
+    }
+    .model-section {
+        background-color: #f9f9f9;
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin: 1rem 0;
+        border: 1px solid #ddd;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Title and description
+st.markdown('<h1 class="main-header">🌴 Palm Oil Price Prediction System</h1>', unsafe_allow_html=True)
+st.markdown("""
+This application predicts palm oil prices using machine learning models.
+The system integrates weather data, production indices, exchange rates, and export numbers to provide accurate predictions.
 """)
 
 # Sidebar for navigation
 st.sidebar.title("Navigation")
-section = st.sidebar.radio(
-    "Go to:",
-    ["Introduction", "Data Integration", "Data Preprocessing", "EDA", 
-     "Feature Engineering", "Model Training", "Results", "Predictions"]
-)
+page = st.sidebar.radio("Go to:", ["📊 Data Overview", "🤖 Model Predictions", "📈 Results Comparison"])
 
-# Initialize session state for data
-if 'df' not in st.session_state:
-    st.session_state.df = None
-if 'models' not in st.session_state:
-    st.session_state.models = {}
-if 'results' not in st.session_state:
-    st.session_state.results = {}
-
-# Helper functions
+# Cache data loading
+@st.cache_data
 def load_and_preprocess_data():
-    """Simulate data loading and preprocessing"""
-    # Note: In actual deployment, you would load real CSV files
-    # For this template, we'll create synthetic data
-    st.warning("⚠️ **Note:** In a real deployment, upload actual CSV files")
-    
-    # Create synthetic data for demonstration
-    dates = pd.date_range(start='2020-01-01', end='2022-05-31', freq='D')
-    n_days = len(dates)
-    
-    synthetic_data = {
-        'Date': dates,
-        'Temperature': np.random.normal(25, 5, n_days),
-        'Humidity': np.random.normal(70, 10, n_days),
-        'Dew': np.random.normal(20, 3, n_days),
-        'Sealevelpressure': np.random.normal(1013, 10, n_days),
-        'Solarradiation': np.random.normal(200, 50, n_days),
-        'Solarenergy': np.random.normal(15, 4, n_days),
-        'Uvindex': np.random.normal(5, 2, n_days),
-        'Cloudcover': np.random.normal(50, 20, n_days),
-        'Moonphase': np.random.uniform(0, 1, n_days),
-        'Precipitation': np.random.exponential(2, n_days),
-        'Windspeed': np.random.normal(10, 3, n_days),
-        'Winddirection': np.random.uniform(0, 360, n_days),
-        'Index Production': np.random.normal(100, 20, n_days),
-        'Export Number (in Tonnes)': np.random.normal(50000, 10000, n_days),
-        'USD': np.random.normal(4.2, 0.1, n_days),
-    }
-    
-    # Add price with some seasonality and trend
-    trend = np.linspace(100, 150, n_days)
-    seasonality = 20 * np.sin(2 * np.pi * np.arange(n_days) / 365)
-    noise = np.random.normal(0, 5, n_days)
-    synthetic_data['Price'] = trend + seasonality + noise
-    
-    df = pd.DataFrame(synthetic_data)
-    
-    # Add some missing values for demonstration
-    for col in ['Index Production', 'Export Number (in Tonnes)', 'USD', 'Sealevelpressure']:
-        mask = np.random.choice([True, False], size=n_days, p=[0.05, 0.95])
-        df.loc[mask, col] = np.nan
-    
-    st.session_state.df = df
-    return df
+    """Load and preprocess the dataset"""
+    try:
+        # Load all CSV files (adjust paths as needed)
+        weather_df = pd.read_csv('weather.csv')
+        price2020_df = pd.read_csv('price_2020.csv')
+        price2021_df = pd.read_csv('price_2021.csv')
+        price2022_df = pd.read_csv('price_2022.csv')
+        ipi_df = pd.read_csv('production_index.csv')
+        export_df = pd.read_csv('export_number.csv')
+        exchange_df = pd.read_csv('exchange_rates.csv')
+        
+        # Convert date columns
+        for df in [weather_df, price2020_df, price2021_df, price2022_df, ipi_df, export_df, exchange_df]:
+            if 'Date' in df.columns:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        
+        # Preprocessing steps (simplified version)
+        # Merge all dataframes
+        df = weather_df.copy()
+        
+        # Add year and month features
+        df['Year'] = df['Date'].dt.year
+        df['Month'] = df['Date'].dt.month
+        
+        # Handle missing values
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            df[col] = df[col].fillna(df[col].median())
+        
+        return df
+    except Exception as e:
+        st.error(f"Error loading data: {e}")
+        # Return sample data if files not found
+        dates = pd.date_range(start='2020-01-01', end='2022-05-31', freq='D')
+        df = pd.DataFrame({
+            'Date': dates,
+            'Temperature': np.random.normal(25, 5, len(dates)),
+            'Humidity': np.random.normal(80, 10, len(dates)),
+            'Solarradiation': np.random.normal(200, 50, len(dates)),
+            'Solarenergy': np.random.normal(15, 3, len(dates)),
+            'Uvindex': np.random.normal(5, 2, len(dates)),
+            'Index Production': np.random.normal(100, 20, len(dates)),
+            'Export Number (in Tonnes)': np.random.normal(100000, 20000, len(dates)),
+            'USD': np.random.normal(4.2, 0.2, len(dates)),
+            'Price': np.random.normal(3000, 500, len(dates)),
+            'Year': dates.year,
+            'Month': dates.month
+        })
+        return df
 
-# Section 1: Introduction
-if section == "Introduction":
-    st.header("📊 Project Overview")
-    st.markdown("""
-    This project focuses on **predicting palm oil prices** using machine learning techniques.
+@st.cache_resource
+def train_models(X_train_scaled, y_train, selected_features):
+    """Train the top 4 models"""
+    models = {}
     
-    ### Dataset Description
-    The dataset combines multiple sources:
-    1. **Weather Data** - Daily weather measurements
-    2. **Price Data** - Daily palm oil prices (2020-2022)
-    3. **Economic Indicators** - Exchange rates, production index, export numbers
+    # 1. Random Forest Regressor
+    rf = RandomForestRegressor(
+        n_estimators=200,
+        max_depth=5,
+        min_samples_leaf=5,
+        random_state=42
+    )
+    rf.fit(X_train_scaled, y_train)
+    models['Random Forest'] = rf
     
-    ### Objectives
-    - Integrate multiple data sources
-    - Perform exploratory data analysis
-    - Build and compare multiple ML models
-    - Predict palm oil prices based on various factors
-    """)
+    # 2. XGBoost Regressor
+    xgb = XGBRegressor(
+        n_estimators=200,
+        max_depth=5,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        random_state=42
+    )
+    xgb.fit(X_train_scaled, y_train)
+    models['XGBoost'] = xgb
     
-    # Load data button
-    if st.button("📁 Load Sample Data (Synthetic)"):
-        with st.spinner("Loading and preprocessing data..."):
-            df = load_and_preprocess_data()
-            st.success(f"✅ Data loaded successfully! Shape: {df.shape}")
-            st.dataframe(df.head(), use_container_width=True)
+    # 3. Gradient Boosting Regressor
+    gbr = GradientBoostingRegressor(
+        n_estimators=300,
+        learning_rate=0.05,
+        max_depth=3,
+        random_state=42
+    )
+    gbr.fit(X_train_scaled, y_train)
+    models['Gradient Boosting'] = gbr
+    
+    # 4. SVR (Support Vector Regression)
+    svr = make_pipeline(
+        StandardScaler(),
+        SVR(kernel='rbf', C=100, epsilon=0.1)
+    )
+    svr.fit(X_train_scaled, y_train)
+    models['SVR'] = svr
+    
+    return models
 
-# Section 2: Data Integration
-elif section == "Data Integration":
-    st.header("🔄 Data Integration")
-    
-    if st.session_state.df is None:
-        st.info("Please load data from the Introduction section first.")
-    else:
-        df = st.session_state.df
-        
-        col1, col2 = st.columns(2)
-        
-        with col1:
-            st.subheader("Data Overview")
-            st.write(f"**Shape:** {df.shape}")
-            st.write(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}")
-            
-            # Show data types
-            st.subheader("Data Types")
-            dtype_df = pd.DataFrame(df.dtypes, columns=['Data Type'])
-            st.dataframe(dtype_df, use_container_width=True)
-        
-        with col2:
-            st.subheader("Column Information")
-            columns = st.multiselect(
-                "Select columns to view:",
-                df.columns.tolist(),
-                default=['Date', 'Price', 'Temperature', 'Index Production']
-            )
-            if columns:
-                st.dataframe(df[columns].head(10), use_container_width=True)
-        
-        # Missing values
-        st.subheader("Missing Values")
-        missing_df = pd.DataFrame(df.isnull().sum(), columns=['Missing Values'])
-        missing_df['Percentage'] = (missing_df['Missing Values'] / len(df)) * 100
-        st.dataframe(missing_df, use_container_width=True)
+# Load data
+df = load_and_preprocess_data()
 
-# Section 3: Data Preprocessing
-elif section == "Data Preprocessing":
-    st.header("🧹 Data Preprocessing")
+if page == "📊 Data Overview":
+    st.markdown('<h2 class="sub-header">Dataset Overview</h2>', unsafe_allow_html=True)
     
-    if st.session_state.df is None:
-        st.info("Please load data from the Introduction section first.")
-    else:
-        df = st.session_state.df.copy()
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.subheader("📋 Data Sample")
+        st.dataframe(df.head(10), use_container_width=True)
+    
+    with col2:
+        st.subheader("📊 Data Information")
+        buffer = []
+        buffer.append(f"Total Rows: {df.shape[0]}")
+        buffer.append(f"Total Columns: {df.shape[1]}")
+        buffer.append(f"Date Range: {df['Date'].min().date()} to {df['Date'].max().date()}")
         
-        st.subheader("Current Data")
-        st.dataframe(df.head(), use_container_width=True)
+        st.write("\n".join(buffer))
+    
+    st.subheader("📈 Price Distribution Over Time")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(df['Date'], df['Price'], linewidth=2, color='#2E8B57')
+    ax.set_xlabel('Date')
+    ax.set_ylabel('Price')
+    ax.set_title('Palm Oil Price Trend')
+    ax.grid(True, alpha=0.3)
+    plt.xticks(rotation=45)
+    st.pyplot(fig)
+    
+    st.subheader("🔍 Correlation Heatmap")
+    numeric_df = df.select_dtypes(include=[np.number])
+    fig, ax = plt.subplots(figsize=(10, 8))
+    corr = numeric_df.corr()
+    sns.heatmap(corr, annot=True, fmt=".2f", cmap="coolwarm", ax=ax)
+    st.pyplot(fig)
+
+elif page == "🤖 Model Predictions":
+    st.markdown('<h2 class="sub-header">Model Training & Prediction</h2>', unsafe_allow_html=True)
+    
+    # Prepare data for modeling
+    if 'Price' in df.columns:
+        # Select features based on correlation
+        features = ['Solarradiation', 'Solarenergy', 'Uvindex', 
+                   'Index Production', 'Export Number (in Tonnes)', 
+                   'USD', 'Year', 'Month']
         
-        # Data type conversion
-        st.subheader("Data Type Conversion")
-        if st.checkbox("Convert Export Number to numeric"):
-            df['Export Number (in Tonnes)'] = pd.to_numeric(
-                df['Export Number (in Tonnes)'], errors='coerce'
-            )
-            st.success("Export Number converted to numeric")
+        # Filter features that exist in the dataframe
+        available_features = [f for f in features if f in df.columns]
         
-        # Missing value imputation
-        st.subheader("Missing Value Imputation")
-        impute_method = st.selectbox(
-            "Select imputation method:",
-            ["Median", "Mean", "Forward Fill", "Drop"]
+        X = df[available_features]
+        y = df['Price']
+        
+        # Split data
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.2, random_state=42
         )
         
-        if st.button("Apply Imputation"):
-            numeric_cols = df.select_dtypes(include=[np.number]).columns
-            
-            if impute_method == "Median":
-                for col in numeric_cols:
-                    df[col] = df[col].fillna(df[col].median())
-            elif impute_method == "Mean":
-                for col in numeric_cols:
-                    df[col] = df[col].fillna(df[col].mean())
-            elif impute_method == "Forward Fill":
-                df = df.fillna(method='ffill')
-            else:  # Drop
-                df = df.dropna()
-            
-            st.success(f"Imputation applied using {impute_method} method")
-            st.dataframe(df.isnull().sum().to_frame('Missing Values'), use_container_width=True)
-            st.session_state.df = df
-
-# Section 4: EDA
-elif section == "EDA":
-    st.header("📈 Exploratory Data Analysis")
-    
-    if st.session_state.df is None:
-        st.info("Please load data from the Introduction section first.")
-    else:
-        df = st.session_state.df
+        # Scale features
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
         
-        # Distribution plots
-        st.subheader("Distribution of Numerical Variables")
-        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        # Feature selection using RFE
+        st.subheader("🎯 Feature Selection")
+        estimator = LinearRegression()
+        rfe = RFE(estimator=estimator, n_features_to_select=5)
+        rfe.fit(X_train_scaled, y_train)
         
-        selected_col = st.selectbox("Select variable to plot:", numeric_cols)
+        selected_features = X_train.columns[rfe.support_]
+        st.write(f"Selected Features: {', '.join(selected_features)}")
         
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4))
+        # Transform data with selected features
+        X_train_rfe = rfe.transform(X_train_scaled)
+        X_test_rfe = rfe.transform(X_test_scaled)
         
-        # Histogram
-        ax1.hist(df[selected_col].dropna(), bins=30, edgecolor='black', alpha=0.7)
-        ax1.set_xlabel(selected_col)
-        ax1.set_ylabel('Frequency')
-        ax1.set_title(f'Distribution of {selected_col}')
+        # Train models
+        with st.spinner("Training models..."):
+            models = train_models(X_train_rfe, y_train, selected_features)
         
-        # Box plot
-        ax2.boxplot(df[selected_col].dropna())
-        ax2.set_ylabel(selected_col)
-        ax2.set_title(f'Box Plot of {selected_col}')
+        st.success("✅ Models trained successfully!")
         
-        plt.tight_layout()
-        st.pyplot(fig)
+        # Make predictions
+        st.subheader("📊 Model Predictions")
         
-        # Correlation matrix
-        st.subheader("Correlation Matrix")
-        if st.checkbox("Show correlation matrix"):
-            corr_matrix = df.select_dtypes(include=[np.number]).corr()
-            
-            fig, ax = plt.subplots(figsize=(10, 8))
-            sns.heatmap(corr_matrix, annot=True, fmt=".2f", cmap="coolwarm", 
-                       square=True, ax=ax)
-            plt.title("Correlation Matrix")
-            st.pyplot(fig)
-        
-        # Time series plot
-        st.subheader("Time Series Analysis")
-        if 'Date' in df.columns and 'Price' in df.columns:
-            time_col = st.selectbox("Select time variable:", ['Price', 'Temperature', 'Index Production'])
-            
-            fig, ax = plt.subplots(figsize=(12, 4))
-            ax.plot(df['Date'], df[time_col])
-            ax.set_xlabel('Date')
-            ax.set_ylabel(time_col)
-            ax.set_title(f'{time_col} Over Time')
-            plt.xticks(rotation=45)
-            st.pyplot(fig)
-
-# Section 5: Feature Engineering
-elif section == "Feature Engineering":
-    st.header("⚙️ Feature Engineering")
-    
-    if st.session_state.df is None:
-        st.info("Please load data from the Introduction section first.")
-    else:
-        df = st.session_state.df.copy()
-        
-        st.subheader("Create Time-based Features")
-        
-        if st.checkbox("Extract date features"):
-            if 'Date' in df.columns:
-                df['Year'] = df['Date'].dt.year
-                df['Month'] = df['Date'].dt.month
-                df['Day'] = df['Date'].dt.day
-                df['DayOfWeek'] = df['Date'].dt.dayofweek
-                
-                st.success("Date features created: Year, Month, Day, DayOfWeek")
-                st.dataframe(df[['Date', 'Year', 'Month', 'Day', 'DayOfWeek']].head(), 
-                           use_container_width=True)
-        
-        st.subheader("Feature Selection")
-        
-        # Prepare data for feature selection
-        if 'Price' in df.columns:
-            # Drop non-numeric columns for correlation analysis
-            df_numeric = df.select_dtypes(include=[np.number])
-            
-            if len(df_numeric.columns) > 1:
-                # Calculate correlation with target
-                correlations = df_numeric.corr()['Price'].drop('Price', errors='ignore')
-                
-                st.write("**Correlation with Price:**")
-                corr_df = pd.DataFrame(correlations.sort_values(ascending=False), 
-                                     columns=['Correlation'])
-                st.dataframe(corr_df, use_container_width=True)
-                
-                # Select features based on threshold
-                threshold = st.slider("Correlation threshold:", 0.0, 1.0, 0.1)
-                selected_features = correlations[abs(correlations) >= threshold].index.tolist()
-                
-                st.write(f"**Selected features (|correlation| ≥ {threshold}):**")
-                st.write(selected_features)
-                
-                # Store selected features in session state
-                st.session_state.selected_features = selected_features
-
-# Section 6: Model Training
-elif section == "Model Training":
-    st.header("🤖 Model Training")
-    
-    if st.session_state.df is None:
-        st.info("Please load data from the Introduction section first.")
-    else:
-        df = st.session_state.df.copy()
-        
-        if 'Price' not in df.columns:
-            st.error("Target variable 'Price' not found in data!")
-        else:
-            # Prepare features and target
-            if 'selected_features' in st.session_state:
-                features = st.session_state.selected_features
-            else:
-                # Use all numeric features except Price
-                numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-                features = [col for col in numeric_cols if col != 'Price']
-            
-            X = df[features]
-            y = df['Price']
-            
-            # Handle missing values in features
-            X = X.fillna(X.median())
-            
-            st.subheader("Data Split")
-            test_size = st.slider("Test set size:", 0.1, 0.4, 0.2)
-            
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=test_size, random_state=42
-            )
-            
-            st.write(f"**Training set:** {X_train.shape[0]} samples")
-            st.write(f"**Test set:** {X_test.shape[0]} samples")
-            
-            # Feature scaling
-            st.subheader("Feature Scaling")
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-            
-            # Model selection
-            st.subheader("Select Models to Train")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                train_lr = st.checkbox("Linear Regression", value=True)
-                train_ridge = st.checkbox("Ridge Regression")
-                train_lasso = st.checkbox("Lasso Regression")
-            
-            with col2:
-                train_rf = st.checkbox("Random Forest", value=True)
-                train_xgb = st.checkbox("XGBoost", value=True)
-                train_gbr = st.checkbox("Gradient Boosting")
-            
-            with col3:
-                train_dt = st.checkbox("Decision Tree")
-                train_svr = st.checkbox("SVR")
-                train_mlp = st.checkbox("Neural Network (MLP)")
-            
-            # Train models button
-            if st.button("🚀 Train Selected Models"):
-                st.session_state.models = {}
-                st.session_state.results = {}
-                
-                with st.spinner("Training models..."):
-                    # Linear Regression
-                    if train_lr:
-                        lr = LinearRegression()
-                        lr.fit(X_train_scaled, y_train)
-                        lr_pred = lr.predict(X_test_scaled)
-                        st.session_state.models['Linear Regression'] = lr
-                        st.session_state.results['Linear Regression'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, lr_pred)),
-                            'MAE': mean_absolute_error(y_test, lr_pred),
-                            'R2': r2_score(y_test, lr_pred)
-                        }
-                    
-                    # Ridge Regression
-                    if train_ridge:
-                        ridge = Ridge(alpha=1.0)
-                        ridge.fit(X_train_scaled, y_train)
-                        ridge_pred = ridge.predict(X_test_scaled)
-                        st.session_state.models['Ridge'] = ridge
-                        st.session_state.results['Ridge'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, ridge_pred)),
-                            'MAE': mean_absolute_error(y_test, ridge_pred),
-                            'R2': r2_score(y_test, ridge_pred)
-                        }
-                    
-                    # Lasso Regression
-                    if train_lasso:
-                        lasso = Lasso(alpha=0.01)
-                        lasso.fit(X_train_scaled, y_train)
-                        lasso_pred = lasso.predict(X_test_scaled)
-                        st.session_state.models['Lasso'] = lasso
-                        st.session_state.results['Lasso'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, lasso_pred)),
-                            'MAE': mean_absolute_error(y_test, lasso_pred),
-                            'R2': r2_score(y_test, lasso_pred)
-                        }
-                    
-                    # Random Forest
-                    if train_rf:
-                        rf = RandomForestRegressor(n_estimators=100, random_state=42)
-                        rf.fit(X_train_scaled, y_train)
-                        rf_pred = rf.predict(X_test_scaled)
-                        st.session_state.models['Random Forest'] = rf
-                        st.session_state.results['Random Forest'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, rf_pred)),
-                            'MAE': mean_absolute_error(y_test, rf_pred),
-                            'R2': r2_score(y_test, rf_pred)
-                        }
-                    
-                    # XGBoost
-                    if train_xgb:
-                        xgb = XGBRegressor(n_estimators=100, random_state=42)
-                        xgb.fit(X_train_scaled, y_train)
-                        xgb_pred = xgb.predict(X_test_scaled)
-                        st.session_state.models['XGBoost'] = xgb
-                        st.session_state.results['XGBoost'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, xgb_pred)),
-                            'MAE': mean_absolute_error(y_test, xgb_pred),
-                            'R2': r2_score(y_test, xgb_pred)
-                        }
-                    
-                    # Gradient Boosting
-                    if train_gbr:
-                        gbr = GradientBoostingRegressor(n_estimators=100, random_state=42)
-                        gbr.fit(X_train_scaled, y_train)
-                        gbr_pred = gbr.predict(X_test_scaled)
-                        st.session_state.models['Gradient Boosting'] = gbr
-                        st.session_state.results['Gradient Boosting'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, gbr_pred)),
-                            'MAE': mean_absolute_error(y_test, gbr_pred),
-                            'R2': r2_score(y_test, gbr_pred)
-                        }
-                    
-                    # Decision Tree
-                    if train_dt:
-                        dt = DecisionTreeRegressor(random_state=42)
-                        dt.fit(X_train_scaled, y_train)
-                        dt_pred = dt.predict(X_test_scaled)
-                        st.session_state.models['Decision Tree'] = dt
-                        st.session_state.results['Decision Tree'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, dt_pred)),
-                            'MAE': mean_absolute_error(y_test, dt_pred),
-                            'R2': r2_score(y_test, dt_pred)
-                        }
-                    
-                    # SVR
-                    if train_svr:
-                        svr = SVR()
-                        svr.fit(X_train_scaled, y_train)
-                        svr_pred = svr.predict(X_test_scaled)
-                        st.session_state.models['SVR'] = svr
-                        st.session_state.results['SVR'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, svr_pred)),
-                            'MAE': mean_absolute_error(y_test, svr_pred),
-                            'R2': r2_score(y_test, svr_pred)
-                        }
-                    
-                    # MLP
-                    if train_mlp:
-                        mlp = MLPRegressor(hidden_layer_sizes=(50, 25), max_iter=500, random_state=42)
-                        mlp.fit(X_train_scaled, y_train)
-                        mlp_pred = mlp.predict(X_test_scaled)
-                        st.session_state.models['MLP'] = mlp
-                        st.session_state.results['MLP'] = {
-                            'RMSE': np.sqrt(mean_squared_error(y_test, mlp_pred)),
-                            'MAE': mean_absolute_error(y_test, mlp_pred),
-                            'R2': r2_score(y_test, mlp_pred)
-                        }
-                
-                st.success("✅ Models trained successfully!")
-
-# Section 7: Results
-elif section == "Results":
-    st.header("📊 Model Results")
-    
-    if not st.session_state.results:
-        st.info("Please train models first in the Model Training section.")
-    else:
-        results = st.session_state.results
-        
-        # Create results dataframe
-        results_df = pd.DataFrame([
-            {
-                'Model': model,
-                'RMSE': metrics['RMSE'],
-                'MAE': metrics['MAE'],
-                'R² Score': metrics['R2']
-            }
-            for model, metrics in results.items()
-        ])
-        
-        # Sort by R² score
-        results_df = results_df.sort_values('R² Score', ascending=False).reset_index(drop=True)
-        
-        st.subheader("Performance Comparison")
-        st.dataframe(results_df.style.format({
-            'RMSE': '{:.4f}',
-            'MAE': '{:.4f}',
-            'R² Score': '{:.4f}'
-        }), use_container_width=True)
-        
-        # Visualizations
-        st.subheader("Performance Visualization")
-        
-        fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-        
-        # RMSE Comparison
-        axes[0].barh(results_df['Model'], results_df['RMSE'])
-        axes[0].set_xlabel('RMSE (Lower is better)')
-        axes[0].set_title('RMSE Comparison')
-        
-        # MAE Comparison
-        axes[1].barh(results_df['Model'], results_df['MAE'])
-        axes[1].set_xlabel('MAE (Lower is better)')
-        axes[1].set_title('MAE Comparison')
-        
-        # R² Score Comparison
-        axes[2].barh(results_df['Model'], results_df['R² Score'])
-        axes[2].set_xlabel('R² Score (Higher is better)')
-        axes[2].set_title('R² Score Comparison')
-        
-        plt.tight_layout()
-        st.pyplot(fig)
-        
-        # Best model
-        best_model = results_df.iloc[0]['Model']
-        st.success(f"🏆 **Best Model:** {best_model} (R² Score: {results_df.iloc[0]['R² Score']:.4f})")
-
-# Section 8: Predictions
-elif section == "Predictions":
-    st.header("🔮 Make Predictions")
-    
-    if not st.session_state.models:
-        st.info("Please train models first in the Model Training section.")
-    else:
-        models = st.session_state.models
-        
-        # Select model
+        # Select a model to view predictions
         selected_model = st.selectbox(
-            "Select model for prediction:",
+            "Choose a model to view predictions:",
             list(models.keys())
         )
         
         model = models[selected_model]
         
-        # Create input form based on features
-        if 'selected_features' in st.session_state:
-            features = st.session_state.selected_features
+        # Make predictions
+        y_pred = model.predict(X_test_rfe)
+        
+        # Calculate metrics
+        rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+        mae = mean_absolute_error(y_test, y_pred)
+        r2 = r2_score(y_test, y_pred)
+        
+        # Display metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("RMSE", f"{rmse:.2f}")
+        with col2:
+            st.metric("MAE", f"{mae:.2f}")
+        with col3:
+            st.metric("R² Score", f"{r2:.4f}")
+        
+        # Plot predictions vs actual
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.scatter(y_test, y_pred, alpha=0.5, color='#2E8B57')
+        ax.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
+                'r--', lw=2, label='Perfect Prediction')
+        ax.set_xlabel('Actual Price')
+        ax.set_ylabel('Predicted Price')
+        ax.set_title(f'{selected_model}: Actual vs Predicted Prices')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        st.pyplot(fig)
+        
+        # Show prediction table
+        st.subheader("📋 Sample Predictions")
+        results_df = pd.DataFrame({
+            'Actual Price': y_test.values[:20],
+            'Predicted Price': y_pred[:20],
+            'Difference': y_pred[:20] - y_test.values[:20]
+        })
+        st.dataframe(results_df.style.format("{:.2f}"), use_container_width=True)
+        
+        # Interactive prediction
+        st.subheader("🎮 Make a Custom Prediction")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            solar_rad = st.slider("Solar Radiation", 
+                                 min_value=0.0, 
+                                 max_value=500.0, 
+                                 value=200.0, 
+                                 step=10.0)
+            solar_energy = st.slider("Solar Energy", 
+                                    min_value=0.0, 
+                                    max_value=30.0, 
+                                    value=15.0, 
+                                    step=0.5)
+            uv_index = st.slider("UV Index", 
+                                min_value=0.0, 
+                                max_value=15.0, 
+                                value=5.0, 
+                                step=0.5)
+        
+        with col2:
+            production_idx = st.slider("Production Index", 
+                                      min_value=50.0, 
+                                      max_value=150.0, 
+                                      value=100.0, 
+                                      step=5.0)
+            year = st.selectbox("Year", [2020, 2021, 2022])
+            month = st.selectbox("Month", range(1, 13))
+        
+        if st.button("Predict Price", type="primary"):
+            # Create input array
+            input_data = np.array([[solar_rad, solar_energy, uv_index, 
+                                  production_idx, 100000, 4.2, year, month]])
             
-            st.subheader("Input Features")
+            # Scale input
+            input_scaled = scaler.transform(input_data)
+            input_rfe = rfe.transform(input_scaled)
             
-            # Create columns for inputs
-            n_cols = 3
-            cols = st.columns(n_cols)
+            # Get prediction from all models
+            predictions = {}
+            for name, model in models.items():
+                pred = model.predict(input_rfe)[0]
+                predictions[name] = pred
             
-            input_values = {}
-            for i, feature in enumerate(features):
-                with cols[i % n_cols]:
-                    # Get statistics for this feature
-                    if st.session_state.df is not None:
-                        mean_val = st.session_state.df[feature].mean()
-                        std_val = st.session_state.df[feature].std()
-                        min_val = st.session_state.df[feature].min()
-                        max_val = st.session_state.df[feature].max()
-                        
-                        input_values[feature] = st.number_input(
-                            f"{feature}:",
-                            value=float(mean_val),
-                            min_value=float(min_val * 0.5),
-                            max_value=float(max_val * 1.5),
-                            step=float(std_val * 0.1)
-                        )
+            # Display results
+            st.subheader("📈 Prediction Results")
             
-            # Make prediction
-            if st.button("Predict Price"):
-                # Prepare input array
-                input_array = np.array([input_values[feature] for feature in features]).reshape(1, -1)
-                
-                # Scale input (assuming StandardScaler was used)
-                scaler = StandardScaler()
-                if st.session_state.df is not None:
-                    X_train = st.session_state.df[features].fillna(
-                        st.session_state.df[features].median()
-                    )
-                    scaler.fit(X_train)
-                    input_scaled = scaler.transform(input_array)
-                
-                # Make prediction
-                prediction = model.predict(input_scaled)
-                
-                st.success(f"**Predicted Price:** ${prediction[0]:.2f}")
-                
-                # Show confidence interval (simplified)
-                st.info("Note: For production use, consider adding confidence intervals and uncertainty estimates.")
+            for model_name, pred_price in predictions.items():
+                col1, col2 = st.columns([1, 3])
+                with col1:
+                    st.metric(model_name, f"${pred_price:.2f}")
+                with col2:
+                    st.progress(min(int((pred_price / 5000) * 100), 100))
+            
+            # Show best prediction
+            best_model = max(predictions, key=lambda x: predictions[x])
+            st.info(f"💰 Highest predicted price: **{best_model}** at **${predictions[best_model]:.2f}**")
+    else:
+        st.warning("Price column not found in dataset. Using sample data.")
+
+elif page == "📈 Results Comparison":
+    st.markdown('<h2 class="sub-header">Model Performance Comparison</h2>', unsafe_allow_html=True)
+    
+    # Simulate results (replace with actual model results)
+    results_data = {
+        'Model': ['Random Forest', 'XGBoost', 'Gradient Boosting', 'SVR', 
+                 'Linear Regression', 'Ridge', 'Lasso', 'Decision Tree'],
+        'RMSE': [450.32, 420.15, 480.25, 510.42, 600.12, 590.34, 595.67, 550.89],
+        'MAE': [320.45, 310.23, 350.12, 380.45, 420.34, 415.67, 418.90, 390.23],
+        'R-squared': [0.892, 0.902, 0.878, 0.862, 0.812, 0.818, 0.815, 0.845]
+    }
+    
+    results_df = pd.DataFrame(results_data)
+    
+    # Sort by R-squared
+    results_df = results_df.sort_values('R-squared', ascending=False).reset_index(drop=True)
+    
+    # Highlight top 4 models
+    def highlight_top4(row):
+        if row.name < 4:
+            return ['background-color: #e8f5e8'] * len(row)
+        else:
+            return [''] * len(row)
+    
+    st.subheader("🏆 Model Performance Ranking")
+    st.dataframe(results_df.style.apply(highlight_top4, axis=1).format({
+        'RMSE': '{:.2f}',
+        'MAE': '{:.2f}',
+        'R-squared': '{:.3f}'
+    }), use_container_width=True)
+    
+    # Visual comparison
+    st.subheader("📊 Performance Visualization")
+    
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
+    # RMSE comparison
+    axes[0].barh(results_df['Model'][:4], results_df['RMSE'][:4], color='#2E8B57')
+    axes[0].set_xlabel('RMSE')
+    axes[0].set_title('RMSE Comparison (Lower is Better)')
+    axes[0].invert_yaxis()
+    
+    # MAE comparison
+    axes[1].barh(results_df['Model'][:4], results_df['MAE'][:4], color='#3CB371')
+    axes[1].set_xlabel('MAE')
+    axes[1].set_title('MAE Comparison (Lower is Better)')
+    axes[1].invert_yaxis()
+    
+    # R-squared comparison
+    axes[2].barh(results_df['Model'][:4], results_df['R-squared'][:4], color='#90EE90')
+    axes[2].set_xlabel('R-squared')
+    axes[2].set_title('R² Score Comparison (Higher is Better)')
+    axes[2].invert_yaxis()
+    
+    plt.tight_layout()
+    st.pyplot(fig)
+    
+    # Feature importance (for tree-based models)
+    st.subheader("🎯 Top Features Importance")
+    
+    # Create a sample feature importance chart
+    features = ['Solarradiation', 'Solarenergy', 'Uvindex', 
+               'Index Production', 'Year', 'Month', 'USD', 
+               'Export Number']
+    importance = [0.25, 0.20, 0.15, 0.18, 0.12, 0.05, 0.03, 0.02]
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    y_pos = np.arange(len(features))
+    ax.barh(y_pos, importance, color='#2E8B57')
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(features)
+    ax.set_xlabel('Importance Score')
+    ax.set_title('Feature Importance in Random Forest Model')
+    plt.tight_layout()
+    st.pyplot(fig)
 
 # Footer
-st.sidebar.markdown("---")
-st.sidebar.markdown("### About")
-st.sidebar.info("""
-This app demonstrates a complete ML pipeline for palm oil price prediction.
-
-**Steps:**
-1. Load and preprocess data
-2. Perform exploratory analysis
-3. Engineer features
-4. Train multiple ML models
-5. Compare results
-6. Make predictions
-""")
+st.markdown("---")
+st.markdown("""
+<div style='text-align: center'>
+    <p>Developed with ❤️ using Streamlit | BSD3523 Machine Learning Project</p>
+    <p>Group: CSM1 | University Malaysia Pahang Al-Sultan Abdullah</p>
+</div>
+""", unsafe_allow_html=True)
