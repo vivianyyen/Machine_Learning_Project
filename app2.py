@@ -526,13 +526,13 @@ if page == "📊 Data Overview":
     with col2:
         st.subheader("📊 Data Information")
         buffer = []
-        buffer.append(f"**Total Rows:** {df.shape[0]}")
-        buffer.append(f"**Total Columns:** {df.shape[1]}")
+        buffer.append(f"**Total Rows:** {df.shape[0]}\n\n")
+        buffer.append(f"**Total Columns:** {df.shape[1]}\n\n")
         if 'Date' in df.columns:
             buffer.append(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}")
         if 'Price' in df.columns:
-            buffer.append(f"**Average Price:** ${df['Price'].mean():.2f}")
-            buffer.append(f"**Price Range:** ${df['Price'].min():.2f} - ${df['Price'].max():.2f}")
+            buffer.append(f"**Average Price:** ${df['Price'].mean():.2f}"\n\n)
+            buffer.append(f"**Price Range:** ${df['Price'].min():.2f} - ${df['Price'].max():.2f}\n\n")
         
         st.markdown("\n".join(buffer))
     
