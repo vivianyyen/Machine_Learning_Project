@@ -632,29 +632,32 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
     # Feature Engineering Section
     st.markdown("### 🔧 Feature Engineering")
     
-    # Create enhanced dataframe with lag features
-    df_enhanced = create_lag_features(df)
+    # Option to use lag features or not
+    use_lag_features = st.sidebar.checkbox("Add Lag Features (Previous Prices)", value=False)
     
-    # Select features - prioritize lag features
-    possible_features = [
-        # Lag features (most important for time series)
-        'Price_Lag_1', 'Price_Lag_2', 'Price_Lag_3', 'Price_Lag_7', 'Price_Lag_30',
-        'Price_Rolling_Mean_7', 'Price_Rolling_Std_7',
-        # Temporal features
-        'Year', 'Month', 'Day', 'DayOfYear', 'Quarter', 'WeekOfYear', 'DayOfWeek',
-        # Original features
-        'Solarradiation', 'Solarenergy', 'Uvindex',
-        'Index Production', 'Export Number (in Tonnes)', 'USD'
-    ]
+    if use_lag_features:
+        # Create enhanced dataframe with lag features
+        df_enhanced = create_lag_features(df)
+        st.info("✅ Lag features added (previous price values)")
+    else:
+        df_enhanced = df.copy()
+        st.info("📊 Using original data columns only")
     
-    # Get available features
-    available_features = [f for f in possible_features if f in df_enhanced.columns]
-    
-    # Add other numeric features (excluding Price)
+    # Get all numeric columns except Price
     numeric_cols = df_enhanced.select_dtypes(include=[np.number]).columns.tolist()
-    if 'Price' in numeric_cols:
-        numeric_cols.remove('Price')
-    available_features = list(set(available_features + numeric_cols))
+    
+    # Remove Price and Date-related columns we don't want as features
+    exclude_cols = ['Price']
+    available_features = [col for col in numeric_cols if col not in exclude_cols]
+    
+    # Prioritize original data columns over derived features
+    original_features = [f for f in available_features if not any(x in f for x in ['Lag', 'Rolling', 'Year', 'Month', 'Day', 'Quarter', 'Week'])]
+    temporal_features = ['Year', 'Month', 'Day', 'DayOfYear', 'Quarter', 'WeekOfYear', 'DayOfWeek']
+    temporal_features = [f for f in temporal_features if f in available_features]
+    lag_features = [f for f in available_features if 'Lag' in f or 'Rolling' in f]
+    
+    # Reorder: original features first, then temporal, then lag
+    available_features = original_features + temporal_features + lag_features
     
     if len(available_features) < 1:
         st.error("No features available for modeling!")
@@ -662,16 +665,23 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         st.stop()
     
     # Display feature selection
-    with st.expander("📋 Selected Features"):
-        st.write(f"**Total features:** {len(available_features)}")
-        st.write("**Features:**", ", ".join(available_features))
+    with st.expander("📋 Available Features", expanded=True):
+        st.write(f"**Total features available:** {len(available_features)}")
         
-        # Show which are lag features
-        lag_features = [f for f in available_features if 'Lag' in f or 'Rolling' in f]
-        if lag_features:
-            st.success(f"✅ {len(lag_features)} lag features included")
-        else:
-            st.warning("⚠️ No lag features - time series prediction will be difficult")
+        if original_features:
+            st.write(f"**🔹 Original Data Features ({len(original_features)}):**")
+            st.write(", ".join(original_features))
+        
+        if temporal_features:
+            st.write(f"**📅 Temporal Features ({len(temporal_features)}):**")
+            st.write(", ".join(temporal_features))
+        
+        if lag_features and use_lag_features:
+            st.write(f"**⏮️ Lag Features ({len(lag_features)}):**")
+            st.write(", ".join(lag_features))
+        
+        if not original_features and not lag_features:
+            st.warning("⚠️ No suitable features found - only temporal features available")
     
     # Prepare features and target
     X = df_enhanced[available_features].copy()
