@@ -3,16 +3,17 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from datetime import datetime
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split, cross_val_score
+import time
+from sklearn.model_selection import GridSearchCV, train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.feature_selection import RFE
-from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.linear_model import LinearRegression, Ridge
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
+import warnings
+warnings.filterwarnings('ignore')
 
 # Page configuration
 st.set_page_config(
@@ -36,35 +37,12 @@ st.markdown("""
         margin-top: 2rem;
         margin-bottom: 1rem;
     }
-    .metric-card {
-        background-color: #f0f8ff;
+    .warning-box {
+        background-color: #fff3cd;
+        border: 1px solid #ffc107;
         padding: 1rem;
-        border-radius: 10px;
-        border-left: 5px solid #2E8B57;
+        border-radius: 5px;
         margin: 1rem 0;
-    }
-    .stButton>button {
-        background-color: #2E8B57;
-        color: white;
-        font-weight: bold;
-    }
-    .best-model {
-        border: 3px solid #FFD700;
-        padding: 10px;
-        border-radius: 10px;
-        background-color: #FFF8DC;
-    }
-    .train-metrics {
-        background-color: #f0f8ff;
-        padding: 10px;
-        border-radius: 5px;
-        border-left: 3px solid #3CB371;
-    }
-    .test-metrics {
-        background-color: #fff0f0;
-        padding: 10px;
-        border-radius: 5px;
-        border-left: 3px solid #FF6B6B;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -72,1077 +50,664 @@ st.markdown("""
 # Title and description
 st.markdown('<h1 class="main-header">🌴 Palm Oil Price Prediction System</h1>', unsafe_allow_html=True)
 st.markdown("""
-This application predicts palm oil prices using machine learning models with hyperparameter tuning.
-The system integrates weather data, production indices, exchange rates, and export numbers to provide accurate predictions.
+This application predicts palm oil prices using machine learning models. 
+Using features from uploaded dataset only.
 """)
 
 # Sidebar for navigation
 st.sidebar.title("Navigation")
-page = st.sidebar.radio("Go to:", ["📊 Data Overview", "🤖 Model Predictions", "📈 Results Comparison", "⚙️ Hyperparameter Tuning"])
+page = st.sidebar.radio("Go to:", ["Data Overview", "Model Predictions", "Results Comparison"])
 
 # Cache data loading
 @st.cache_data
 def load_data():
-    """Load and prepare data"""
-    # Load your data - adjust filename as needed
-    df = pd.read_csv("price.csv")
-    
-    # Ensure Date column is datetime
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    
-    # Add year and month columns if not present
-    if 'Date' in df.columns:
-        df['Year'] = df['Date'].dt.year
-        df['Month'] = df['Date'].dt.month
-    
-    # Fill missing values
-    numeric_cols = df.select_dtypes(include=[np.number]).columns
-    for col in numeric_cols:
-        df[col] = df[col].fillna(df[col].median())
+    """Load and prepare data from price.csv"""
+    try:
+        # Try to load data
+        df = pd.read_csv("price.csv")
         
-    return df
+        # Log data loading
+        st.sidebar.info(f"📊 Loaded {len(df)} rows, {len(df.columns)} columns")
+        
+        # Show actual columns in dataset
+        st.sidebar.write("**📋 Actual columns in price.csv:**")
+        for col in df.columns:
+            st.sidebar.write(f"- {col}")
+        
+        # Ensure Date column is datetime
+        if 'Date' in df.columns:
+            df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+        elif 'date' in df.columns:
+            df['Date'] = pd.to_datetime(df['date'], errors='coerce')
+            df = df.drop('date', axis=1)
+        else:
+            # If no Date column, check for any date-like column
+            date_cols = [col for col in df.columns if 'date' in col.lower() or 'time' in col.lower()]
+            if date_cols:
+                df['Date'] = pd.to_datetime(df[date_cols[0]], errors='coerce')
+                df = df.drop(date_cols[0], axis=1)
+            else:
+                # Create a simple date range
+                df['Date'] = pd.date_range(start='2020-01-01', periods=len(df), freq='D')
+        
+        # Check for Price column (case insensitive)
+        price_col = None
+        for col in df.columns:
+            if 'price' in col.lower():
+                price_col = col
+                break
+        
+        if price_col and price_col != 'Price':
+            df['Price'] = df[price_col]
+            df = df.drop(price_col, axis=1)
+            st.sidebar.success(f"✓ Found price column: '{price_col}' renamed to 'Price'")
+        
+        if 'Price' not in df.columns:
+            st.error("❌ 'Price' column not found in dataset!")
+            st.write("**Available columns in your dataset:**", df.columns.tolist())
+            st.write("Please ensure your CSV has a column named 'Price' or containing 'price' in its name.")
+            return None
+        
+        # Fill missing values in Price
+        if df['Price'].isnull().sum() > 0:
+            st.warning(f"⚠️ Found {df['Price'].isnull().sum()} missing values in Price column. Filling with median.")
+            df['Price'] = df['Price'].fillna(df['Price'].median())
+        
+        # Check Price variance
+        price_std = df['Price'].std()
+        if price_std < 1e-10:
+            st.error(f"❌ Price column has no variance (std: {price_std:.6f})!")
+            st.write("All models will fail with negative R² if price doesn't change.")
+            return None
+        
+        # Fill other numeric columns
+        numeric_cols = df.select_dtypes(include=[np.number]).columns
+        for col in numeric_cols:
+            if df[col].isnull().sum() > 0:
+                df[col] = df[col].fillna(df[col].median())
+        
+        return df
+    
+    except FileNotFoundError:
+        st.error("❌ File 'price.csv' not found!")
+        st.info("""
+        Please ensure you have a file named 'price.csv' in the same directory as this app.
+        Your file should contain:
+        1. A 'Price' column (palm oil prices)
+        2. A 'Date' column (optional)
+        3. Other feature columns
+        """)
+        return None
+    except Exception as e:
+        st.error(f"❌ Error loading data: {str(e)}")
+        return None
 
-def get_hyperparameter_grids():
-    """Define hyperparameter grids for all models"""
-    param_grids = {
-        'Random Forest': {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [5, 10, 15, None],
-            'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
-            'max_features': ['sqrt', 'log2']
-        },
-        'XGBoost': {
-            'n_estimators': [50, 100, 200],
-            'max_depth': [3, 5, 7],
-            'learning_rate': [0.01, 0.05, 0.1, 0.2],
-            'subsample': [0.6, 0.8, 1.0],
-            'colsample_bytree': [0.6, 0.8, 1.0],
-            'gamma': [0, 0.1, 0.2]
-        },
-        'Gradient Boosting': {
-            'n_estimators': [50, 100, 200],
-            'learning_rate': [0.01, 0.05, 0.1, 0.2],
-            'max_depth': [3, 4, 5],
-            'min_samples_split': [2, 5, 10],
-            'min_samples_leaf': [1, 2, 4],
-            'subsample': [0.6, 0.8, 1.0]
-        },
-        'SVR': {
-            'C': [0.1, 1, 10, 100],
-            'epsilon': [0.01, 0.1, 0.5, 1.0],
-            'kernel': ['linear', 'rbf', 'poly']
-        },
-        'Decision Tree': {
-            'max_depth': [3, 5, 7, 10, 15, None],
-            'min_samples_split': [2, 5, 10, 20],
-            'min_samples_leaf': [1, 2, 4, 8],
-            'criterion': ['squared_error', 'friedman_mse', 'absolute_error'],
-            'splitter': ['best', 'random']
+@st.cache_resource
+def train_models(X_train, y_train, X_test, y_test, model_type='tuned'):
+    """Train models with the given data"""
+    
+    models = {}
+    metrics = {}
+    scalers = {}
+    
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Model configurations
+    if model_type == 'tuned':
+        model_configs = {
+            'Random Forest': GridSearchCV(
+                RandomForestRegressor(random_state=42, n_jobs=-1),
+                {'n_estimators': [50, 100], 'max_depth': [5, 10]},
+                cv=3, scoring='r2', n_jobs=-1
+            ),
+            'XGBoost': GridSearchCV(
+                XGBRegressor(random_state=42, n_jobs=-1),
+                {'n_estimators': [50, 100], 'max_depth': [3, 5], 'learning_rate': [0.01, 0.1]},
+                cv=3, scoring='r2', n_jobs=-1
+            ),
+            'Gradient Boosting': GridSearchCV(
+                GradientBoostingRegressor(random_state=42),
+                {'n_estimators': [50, 100], 'learning_rate': [0.01, 0.1], 'max_depth': [3, 5]},
+                cv=3, scoring='r2'
+            ),
+            'SVR': GridSearchCV(
+                SVR(),
+                {'C': [1, 10], 'epsilon': [0.1, 0.2]},
+                cv=3, scoring='r2'
+            ),
+            'Decision Tree': GridSearchCV(
+                DecisionTreeRegressor(random_state=42),
+                {'max_depth': [3, 5, 10], 'min_samples_leaf': [1, 2, 4]},
+                cv=3, scoring='r2'
+            ),
+            'Linear Regression': Ridge(alpha=1.0, random_state=42)  # Simple Ridge for stability
         }
-    }
-    return param_grids
-
-@st.cache_resource
-def train_models_with_tuning(X_train, y_train, X_test, y_test, tuning_method='grid', cv_folds=3):
-    """Train models with hyperparameter tuning and calculate metrics"""
-    models = {}
-    best_params = {}
-    train_metrics = {}
-    test_metrics = {}
+    else:  # untuned
+        model_configs = {
+            'Random Forest': RandomForestRegressor(n_estimators=100, max_depth=10, random_state=42, n_jobs=-1),
+            'XGBoost': XGBRegressor(n_estimators=100, max_depth=3, learning_rate=0.1, random_state=42, n_jobs=-1),
+            'Gradient Boosting': GradientBoostingRegressor(n_estimators=100, learning_rate=0.05, max_depth=3, random_state=42),
+            'SVR': SVR(C=1.0, epsilon=0.1),
+            'Decision Tree': DecisionTreeRegressor(max_depth=5, min_samples_leaf=2, random_state=42),
+            'Linear Regression': Ridge(alpha=1.0, random_state=42)
+        }
     
-    # Get hyperparameter grids
-    param_grids = get_hyperparameter_grids()
+    # Train each model
+    for name, model in model_configs.items():
+        try:
+            # Train model
+            start_time = time.time()
+            model.fit(X_train_scaled, y_train)
+            train_time = time.time() - start_time
+            
+            # Make predictions
+            y_pred = model.predict(X_test_scaled)
+            
+            # Calculate metrics
+            metrics[name] = {
+                'R²': r2_score(y_test, y_pred),
+                'RMSE': np.sqrt(mean_squared_error(y_test, y_pred)),
+                'MAE': mean_absolute_error(y_test, y_pred),
+                'Time': train_time
+            }
+            
+            models[name] = model
+            scalers[name] = scaler
+            
+        except Exception as e:
+            st.warning(f"Could not train {name}: {str(e)}")
     
-    # Scale features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    # 1. Random Forest Regressor
-    rf = RandomForestRegressor(random_state=42, n_jobs=-1)
-    
-    if tuning_method == 'grid':
-        rf_search = GridSearchCV(
-            rf, 
-            param_grids['Random Forest'], 
-            cv=cv_folds, 
-            scoring='neg_mean_squared_error',
-            n_jobs=-1,
-            verbose=0
-        )
-    else:
-        rf_search = RandomizedSearchCV(
-            rf,
-            param_grids['Random Forest'],
-            n_iter=20,
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            random_state=42,
-            n_jobs=-1,
-            verbose=0
-        )
-    
-    rf_search.fit(X_train_scaled, y_train)
-    models['Random Forest'] = rf_search.best_estimator_
-    best_params['Random Forest'] = rf_search.best_params_
-    
-    # Calculate metrics
-    y_train_pred = rf_search.best_estimator_.predict(X_train_scaled)
-    y_test_pred = rf_search.best_estimator_.predict(X_test_scaled)
-    
-    train_metrics['Random Forest'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['Random Forest'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 2. XGBoost Regressor
-    xgb = XGBRegressor(random_state=42, n_jobs=-1)
-    
-    if tuning_method == 'grid':
-        xgb_search = GridSearchCV(
-            xgb,
-            param_grids['XGBoost'],
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            n_jobs=-1,
-            verbose=0
-        )
-    else:
-        xgb_search = RandomizedSearchCV(
-            xgb,
-            param_grids['XGBoost'],
-            n_iter=20,
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            random_state=42,
-            n_jobs=-1,
-            verbose=0
-        )
-    
-    xgb_search.fit(X_train_scaled, y_train)
-    models['XGBoost'] = xgb_search.best_estimator_
-    best_params['XGBoost'] = xgb_search.best_params_
-    
-    # Calculate metrics
-    y_train_pred = xgb_search.best_estimator_.predict(X_train_scaled)
-    y_test_pred = xgb_search.best_estimator_.predict(X_test_scaled)
-    
-    train_metrics['XGBoost'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['XGBoost'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 3. Gradient Boosting Regressor
-    gbr = GradientBoostingRegressor(random_state=42)
-    
-    if tuning_method == 'grid':
-        gbr_search = GridSearchCV(
-            gbr,
-            param_grids['Gradient Boosting'],
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            n_jobs=-1,
-            verbose=0
-        )
-    else:
-        gbr_search = RandomizedSearchCV(
-            gbr,
-            param_grids['Gradient Boosting'],
-            n_iter=20,
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            random_state=42,
-            n_jobs=-1,
-            verbose=0
-        )
-    
-    gbr_search.fit(X_train_scaled, y_train)
-    models['Gradient Boosting'] = gbr_search.best_estimator_
-    best_params['Gradient Boosting'] = gbr_search.best_params_
-    
-    # Calculate metrics
-    y_train_pred = gbr_search.best_estimator_.predict(X_train_scaled)
-    y_test_pred = gbr_search.best_estimator_.predict(X_test_scaled)
-    
-    train_metrics['Gradient Boosting'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['Gradient Boosting'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 4. SVR (Support Vector Regression)
-    svr = SVR()
-    
-    if tuning_method == 'grid':
-        svr_search = GridSearchCV(
-            svr,
-            param_grids['SVR'],
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            n_jobs=-1,
-            verbose=0
-        )
-    else:
-        svr_search = RandomizedSearchCV(
-            svr,
-            param_grids['SVR'],
-            n_iter=20,
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            random_state=42,
-            n_jobs=-1,
-            verbose=0
-        )
-    
-    svr_search.fit(X_train_scaled, y_train)
-    models['SVR'] = svr_search.best_estimator_
-    best_params['SVR'] = svr_search.best_params_
-    
-    # Calculate metrics
-    y_train_pred = svr_search.best_estimator_.predict(X_train_scaled)
-    y_test_pred = svr_search.best_estimator_.predict(X_test_scaled)
-    
-    train_metrics['SVR'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['SVR'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 5. Decision Tree Regressor
-    dt = DecisionTreeRegressor(random_state=42)
-    
-    if tuning_method == 'grid':
-        dt_search = GridSearchCV(
-            dt,
-            param_grids['Decision Tree'],
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            n_jobs=-1,
-            verbose=0
-        )
-    else:
-        dt_search = RandomizedSearchCV(
-            dt,
-            param_grids['Decision Tree'],
-            n_iter=20,
-            cv=cv_folds,
-            scoring='neg_mean_squared_error',
-            random_state=42,
-            n_jobs=-1,
-            verbose=0
-        )
-    
-    dt_search.fit(X_train_scaled, y_train)
-    models['Decision Tree'] = dt_search.best_estimator_
-    best_params['Decision Tree'] = dt_search.best_params_
-    
-    # Calculate metrics
-    y_train_pred = dt_search.best_estimator_.predict(X_train_scaled)
-    y_test_pred = dt_search.best_estimator_.predict(X_test_scaled)
-    
-    train_metrics['Decision Tree'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['Decision Tree'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    return models, best_params, train_metrics, test_metrics, scaler
-
-@st.cache_resource
-def train_models_basic(X_train, y_train, X_test, y_test):
-    """Train models without hyperparameter tuning and calculate metrics"""
-    models = {}
-    train_metrics = {}
-    test_metrics = {}
-    
-    # Scale features
-    scaler = StandardScaler()
-    X_train_scaled = scaler.fit_transform(X_train)
-    X_test_scaled = scaler.transform(X_test)
-    
-    # 1. Random Forest Regressor
-    rf = RandomForestRegressor(
-        n_estimators=100,
-        max_depth=10,
-        min_samples_leaf=2,
-        random_state=42,
-        n_jobs=-1
-    )
-    rf.fit(X_train_scaled, y_train)
-    models['Random Forest'] = rf
-    
-    # Calculate metrics
-    y_train_pred = rf.predict(X_train_scaled)
-    y_test_pred = rf.predict(X_test_scaled)
-    
-    train_metrics['Random Forest'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['Random Forest'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 2. XGBoost Regressor
-    xgb = XGBRegressor(
-        n_estimators=100,
-        max_depth=5,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        random_state=42,
-        n_jobs=-1
-    )
-    xgb.fit(X_train_scaled, y_train)
-    models['XGBoost'] = xgb
-    
-    # Calculate metrics
-    y_train_pred = xgb.predict(X_train_scaled)
-    y_test_pred = xgb.predict(X_test_scaled)
-    
-    train_metrics['XGBoost'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['XGBoost'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 3. Gradient Boosting Regressor
-    gbr = GradientBoostingRegressor(
-        n_estimators=100,
-        learning_rate=0.05,
-        max_depth=3,
-        random_state=42
-    )
-    gbr.fit(X_train_scaled, y_train)
-    models['Gradient Boosting'] = gbr
-    
-    # Calculate metrics
-    y_train_pred = gbr.predict(X_train_scaled)
-    y_test_pred = gbr.predict(X_test_scaled)
-    
-    train_metrics['Gradient Boosting'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['Gradient Boosting'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 4. SVR (Support Vector Regression)
-    svr = SVR(kernel='rbf', C=10, epsilon=0.1)
-    svr.fit(X_train_scaled, y_train)
-    models['SVR'] = svr
-    
-    # Calculate metrics
-    y_train_pred = svr.predict(X_train_scaled)
-    y_test_pred = svr.predict(X_test_scaled)
-    
-    train_metrics['SVR'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['SVR'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    # 5. Decision Tree Regressor
-    dt = DecisionTreeRegressor(
-        max_depth=5,
-        min_samples_leaf=5,
-        random_state=42
-    )
-    dt.fit(X_train_scaled, y_train)
-    models['Decision Tree'] = dt
-    
-    # Calculate metrics
-    y_train_pred = dt.predict(X_train_scaled)
-    y_test_pred = dt.predict(X_test_scaled)
-    
-    train_metrics['Decision Tree'] = {
-        'R²': r2_score(y_train, y_train_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
-        'MAE': mean_absolute_error(y_train, y_train_pred)
-    }
-    
-    test_metrics['Decision Tree'] = {
-        'R²': r2_score(y_test, y_test_pred),
-        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
-        'MAE': mean_absolute_error(y_test, y_test_pred)
-    }
-    
-    return models, train_metrics, test_metrics, scaler
+    return models, metrics, scalers
 
 # Load data
 df = load_data()
 
-if page == "📊 Data Overview":
+if df is None:
+    st.stop()
+
+if page == "Data Overview":
     st.markdown('<h2 class="sub-header">Dataset Overview</h2>', unsafe_allow_html=True)
+    
+    # Show data statistics
+    st.write(f"**Dataset Shape:** {df.shape[0]} rows × {df.shape[1]} columns")
     
     col1, col2 = st.columns(2)
     
     with col1:
-        st.subheader("📋 Data Sample")
-        st.dataframe(df.head(10), use_container_width=True)
+        st.subheader("📋 First 10 Rows")
+        st.dataframe(df.head(10), width='stretch')
     
     with col2:
         st.subheader("📊 Data Information")
-        buffer = []
-        buffer.append(f"**Total Rows:** {df.shape[0]}")
-        buffer.append(f"**Total Columns:** {df.shape[1]}")
-        if 'Date' in df.columns:
-            buffer.append(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}")
-        if 'Price' in df.columns:
-            buffer.append(f"**Average Price:** ${df['Price'].mean():.2f}")
-            buffer.append(f"**Price Range:** ${df['Price'].min():.2f} - ${df['Price'].max():.2f}")
         
-        st.markdown("\n".join(buffer))
+        info_text = []
+        info_text.append(f"**Total Rows:** {df.shape[0]}")
+        info_text.append(f"**Total Columns:** {df.shape[1]}")
+        
+        if 'Date' in df.columns:
+            info_text.append(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}")
+        
+        if 'Price' in df.columns:
+            price_stats = df['Price'].describe()
+            info_text.append(f"**Price Statistics:**")
+            info_text.append(f"- Mean: ${price_stats['mean']:.2f}")
+            info_text.append(f"- Std Dev: ${price_stats['std']:.2f}")
+            info_text.append(f"- Min: ${price_stats['min']:.2f}")
+            info_text.append(f"- Max: ${price_stats['max']:.2f}")
+            
+            # Check for low variance
+            if price_stats['std'] < 1:
+                st.markdown('<div class="warning-box">', unsafe_allow_html=True)
+                st.error("⚠️ Price has very low variation!")
+                st.write(f"Standard deviation: ${price_stats['std']:.6f}")
+                st.write("This will cause negative R² scores.")
+                st.markdown('</div>', unsafe_allow_html=True)
+        
+        st.write("\n".join(info_text))
     
-    # Line chart of price over time
+    # FIXED LINE CHART - Simple and clear
     if 'Date' in df.columns and 'Price' in df.columns:
-        st.subheader("📈 Price Distribution Over Time")
+        st.subheader("📈 Price Trend Over Time")
+        
+        # Create a clean figure
         fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(df['Date'], df['Price'], linewidth=2, color='#2E8B57')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Price ($)')
-        ax.set_title('Palm Oil Price Trend')
+        
+        # Plot price vs date
+        ax.plot(df['Date'], df['Price'], color='#2E8B57', linewidth=2)
+        
+        # Set labels and title
+        ax.set_xlabel('Date', fontsize=12)
+        ax.set_ylabel('Price ($)', fontsize=12)
+        ax.set_title('Palm Oil Price Trend', fontsize=14, fontweight='bold')
+        
+        # Add grid
         ax.grid(True, alpha=0.3)
+        
+        # Format x-axis
         plt.xticks(rotation=45)
         plt.tight_layout()
+        
+        # Display the plot
         st.pyplot(fig)
-    else:
-        st.warning("Date or Price column not found in dataset.")
+        
+        # Also show a simple scatter plot of recent prices
+        st.subheader("📊 Recent Price Distribution")
+        
+        fig2, ax2 = plt.subplots(figsize=(10, 5))
+        
+        # Show last 100 prices or all if less
+        n_points = min(100, len(df))
+        recent_prices = df['Price'].tail(n_points)
+        
+        ax2.hist(recent_prices, bins=20, color='#3CB371', edgecolor='black', alpha=0.7)
+        ax2.axvline(x=recent_prices.mean(), color='red', linestyle='--', linewidth=2, label=f'Mean: ${recent_prices.mean():.2f}')
+        
+        ax2.set_xlabel('Price ($)', fontsize=12)
+        ax2.set_ylabel('Frequency', fontsize=12)
+        ax2.set_title(f'Distribution of Last {n_points} Prices', fontsize=14, fontweight='bold')
+        ax2.legend()
+        ax2.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        st.pyplot(fig2)
     
-    # Basic statistics
-    st.subheader("📊 Statistical Summary")
-    if 'Price' in df.columns:
-        price_stats = df['Price'].describe()
-        cols = st.columns(4)
-        with cols[0]:
-            st.metric("Mean", f"${price_stats['mean']:.2f}")
-        with cols[1]:
-            st.metric("Std Dev", f"${price_stats['std']:.2f}")
-        with cols[2]:
-            st.metric("Min", f"${price_stats['min']:.2f}")
-        with cols[3]:
-            st.metric("Max", f"${price_stats['max']:.2f}")
+    # Show all features in dataset
+    st.subheader("🔍 All Features in Dataset")
+    
+    feature_info = []
+    for col in df.columns:
+        if col not in ['Date', 'Price']:
+            dtype = str(df[col].dtype)
+            null_count = df[col].isnull().sum()
+            unique_count = df[col].nunique()
+            
+            if np.issubdtype(df[col].dtype, np.number):
+                # Numeric feature
+                mean_val = df[col].mean()
+                std_val = df[col].std()
+                feature_info.append({
+                    'Feature': col,
+                    'Type': dtype,
+                    'Null': null_count,
+                    'Unique': unique_count,
+                    'Mean': f"{mean_val:.2f}",
+                    'Std': f"{std_val:.2f}"
+                })
+            else:
+                # Non-numeric feature
+                feature_info.append({
+                    'Feature': col,
+                    'Type': dtype,
+                    'Null': null_count,
+                    'Unique': unique_count,
+                    'Mean': 'N/A',
+                    'Std': 'N/A'
+                })
+    
+    if feature_info:
+        feature_df = pd.DataFrame(feature_info)
+        st.dataframe(feature_df, width='stretch')
+    else:
+        st.info("No additional features found besides Date and Price.")
 
-elif page == "🤖 Model Predictions":
+elif page == "Model Predictions":
     st.markdown('<h2 class="sub-header">Model Training & Prediction</h2>', unsafe_allow_html=True)
     
     if 'Price' not in df.columns:
-        st.error("'Price' column not found in dataset. Cannot proceed with modeling.")
-        st.info("Please ensure your dataset contains a 'Price' column.")
-    else:
-        # Select available features
-        possible_features = ['Solarradiation', 'Solarenergy', 'Uvindex', 
-                           'Index Production', 'Export Number (in Tonnes)', 
-                           'USD', 'Year', 'Month']
-        
-        available_features = [f for f in possible_features if f in df.columns]
-        
-        if len(available_features) < 3:
-            st.error(f"Not enough features available for modeling. Found: {available_features}")
-        else:
-            X = df[available_features]
-            y = df['Price']
-            
-            # Handle any missing values
-            X = X.fillna(X.median())
-            y = y.fillna(y.median())
-            
-            # Split data
-            X_train, X_test, y_train, y_test = train_test_split(
-                X, y, test_size=0.2, random_state=42
-            )
-            
-            # Training options
-            st.sidebar.subheader("Training Options")
-            use_hyperparameter_tuning = st.sidebar.checkbox("Use Hyperparameter Tuning", value=True)
-            tuning_method = st.sidebar.selectbox("Tuning Method", ["grid", "random"], index=0)
-            cv_folds = st.sidebar.slider("CV Folds", min_value=3, max_value=10, value=3)
-            
-            # Feature selection using RFE
-            with st.expander("🎯 Feature Selection Details"):
-                estimator = LinearRegression()
-                n_features = min(5, len(available_features))
-                rfe = RFE(estimator=estimator, n_features_to_select=n_features)
-                
-                # Scale for RFE
-                scaler_rfe = StandardScaler()
-                X_train_scaled_rfe = scaler_rfe.fit_transform(X_train)
-                
-                rfe.fit(X_train_scaled_rfe, y_train)
-                
-                selected_features = X_train.columns[rfe.support_].tolist()
-                st.write(f"**Selected {n_features} features:** {', '.join(selected_features)}")
-            
-            # Train models button
-            if st.button("🚀 Train All Models", type="primary"):
-                with st.spinner("Training models... This may take a few minutes."):
-                    if use_hyperparameter_tuning:
-                        models, best_params, train_metrics, test_metrics, scaler = train_models_with_tuning(
-                            X_train, y_train, X_test, y_test, tuning_method, cv_folds
-                        )
-                        tuning_status = "with Hyperparameter Tuning"
-                    else:
-                        models, train_metrics, test_metrics, scaler = train_models_basic(
-                            X_train, y_train, X_test, y_test
-                        )
-                        tuning_status = "with Default Parameters"
-                        best_params = {}
-                
-                if models:
-                    st.success(f"✅ All models trained successfully {tuning_status}!")
-                    
-                    # Display best parameters if tuning was used
-                    if use_hyperparameter_tuning and best_params:
-                        with st.expander("📋 Best Hyperparameters"):
-                            for model_name, params in best_params.items():
-                                st.write(f"**{model_name}:**")
-                                st.json(params)
-                    
-                    # Store metrics in session state for comparison page
-                    st.session_state['train_metrics'] = train_metrics
-                    st.session_state['test_metrics'] = test_metrics
-                    st.session_state['models'] = models
-                    st.session_state['scaler'] = scaler
-                    st.session_state['X_train'] = X_train
-                    st.session_state['y_train'] = y_train
-                    st.session_state['X_test'] = X_test
-                    st.session_state['y_test'] = y_test
-                    st.session_state['available_features'] = available_features
-                    
-                    # Select a model to view predictions
-                    st.subheader("📊 Model Predictions")
-                    
-                    selected_model = st.selectbox(
-                        "Choose a model to view detailed predictions:",
-                        list(models.keys())
-                    )
-                    
-                    model = models[selected_model]
-                    
-                    # Make predictions for the selected model
-                    X_test_scaled = scaler.transform(X_test)
-                    y_pred = model.predict(X_test_scaled)
-                    
-                    # Display train vs test metrics comparison
-                    st.subheader("📈 Train vs Test Performance")
-                    
-                    col1, col2, col3 = st.columns(3)
-                    
-                    with col1:
-                        st.markdown("### R² Score")
-                        st.metric("Train", f"{train_metrics[selected_model]['R²']:.4f}")
-                        st.metric("Test", f"{test_metrics[selected_model]['R²']:.4f}")
-                        diff_r2 = test_metrics[selected_model]['R²'] - train_metrics[selected_model]['R²']
-                        st.caption(f"Difference: {diff_r2:+.4f}")
-                    
-                    with col2:
-                        st.markdown("### RMSE")
-                        st.metric("Train", f"{train_metrics[selected_model]['RMSE']:.2f}")
-                        st.metric("Test", f"{test_metrics[selected_model]['RMSE']:.2f}")
-                        diff_rmse = test_metrics[selected_model]['RMSE'] - train_metrics[selected_model]['RMSE']
-                        st.caption(f"Difference: {diff_rmse:+.2f}")
-                    
-                    with col3:
-                        st.markdown("### MAE")
-                        st.metric("Train", f"{train_metrics[selected_model]['MAE']:.2f}")
-                        st.metric("Test", f"{test_metrics[selected_model]['MAE']:.2f}")
-                        diff_mae = test_metrics[selected_model]['MAE'] - train_metrics[selected_model]['MAE']
-                        st.caption(f"Difference: {diff_mae:+.2f}")
-                    
-                    # Overfitting/Underfitting analysis
-                    st.subheader("🔍 Overfitting Analysis")
-                    r2_gap = abs(train_metrics[selected_model]['R²'] - test_metrics[selected_model]['R²'])
-                    
-                    if r2_gap > 0.1:
-                        st.warning(f"⚠️ Potential overfitting detected! R² gap: {r2_gap:.3f}")
-                        st.info("The model performs much better on training data than test data. Consider:")
-                        st.write("1. Reducing model complexity")
-                        st.write("2. Adding regularization")
-                        st.write("3. Getting more training data")
-                    elif r2_gap < 0.05:
-                        st.success(f"✅ Good generalization! R² gap: {r2_gap:.3f}")
-                        st.info("The model performs similarly on training and test data.")
-                    else:
-                        st.info(f"📊 Moderate generalization. R² gap: {r2_gap:.3f}")
-                    
-                    # Plot predictions vs actual
-                    st.subheader("📊 Prediction Visualization")
-                    
-                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-                    
-                    # Scatter plot
-                    ax1.scatter(y_test, y_pred, alpha=0.5, color='#2E8B57', s=30)
-                    ax1.plot([y_test.min(), y_test.max()], 
-                            [y_test.min(), y_test.max()], 
-                            'r--', lw=2, label='Perfect Prediction')
-                    ax1.set_xlabel('Actual Price ($)')
-                    ax1.set_ylabel('Predicted Price ($)')
-                    ax1.set_title(f'{selected_model}: Test Set Predictions')
-                    ax1.legend()
-                    ax1.grid(True, alpha=0.3)
-                    
-                    # Residual plot
-                    residuals = y_test - y_pred
-                    ax2.scatter(y_pred, residuals, alpha=0.5, color='#FF6B6B', s=30)
-                    ax2.axhline(y=0, color='r', linestyle='--', lw=2)
-                    ax2.set_xlabel('Predicted Price ($)')
-                    ax2.set_ylabel('Residuals')
-                    ax2.set_title(f'{selected_model}: Residual Plot')
-                    ax2.grid(True, alpha=0.3)
-                    
-                    plt.tight_layout()
-                    st.pyplot(fig)
-                    
-                    # Show sample predictions
-                    st.subheader("📋 Sample Test Predictions (First 20 samples)")
-                    results_df = pd.DataFrame({
-                        'Actual Price': y_test.values[:20],
-                        'Predicted Price': y_pred[:20],
-                        'Difference': y_pred[:20] - y_test.values[:20],
-                        'Error %': abs((y_pred[:20] - y_test.values[:20]) / y_test.values[:20] * 100)
-                    })
-                    st.dataframe(results_df.style.format({
-                        'Actual Price': '${:.2f}',
-                        'Predicted Price': '${:.2f}',
-                        'Difference': '${:.2f}',
-                        'Error %': '{:.2f}%'
-                    }), use_container_width=True)
-                    
-                    # Feature importance for tree-based models
-                    if hasattr(model, 'feature_importances_'):
-                        st.subheader("🎯 Feature Importance")
-                        importance = pd.DataFrame({
-                            'Feature': available_features,
-                            'Importance': model.feature_importances_
-                        }).sort_values('Importance', ascending=False)
-                        
-                        fig, ax = plt.subplots(figsize=(10, 6))
-                        ax.barh(importance['Feature'], importance['Importance'], color='#2E8B57')
-                        ax.set_xlabel('Importance Score')
-                        ax.set_title(f'{selected_model}: Feature Importance')
-                        ax.invert_yaxis()
-                        plt.tight_layout()
-                        st.pyplot(fig)
-                        
-                        st.dataframe(importance.style.format({'Importance': '{:.4f}'}), use_container_width=True)
-                    
-                    # Interactive prediction
-                    st.subheader("🎮 Make a Custom Prediction")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        solar_rad = st.slider("Solar Radiation", 
-                                             min_value=0.0, 
-                                             max_value=500.0, 
-                                             value=200.0, 
-                                             step=10.0)
-                        solar_energy = st.slider("Solar Energy", 
-                                                min_value=0.0, 
-                                                max_value=30.0, 
-                                                value=15.0, 
-                                                step=0.5)
-                        uv_index = st.slider("UV Index", 
-                                            min_value=0.0, 
-                                            max_value=15.0, 
-                                            value=5.0, 
-                                            step=0.5)
-                    
-                    with col2:
-                        production_idx = st.slider("Production Index", 
-                                                  min_value=50.0, 
-                                                  max_value=150.0, 
-                                                  value=100.0, 
-                                                  step=5.0)
-                        year = st.selectbox("Year", [2020, 2021, 2022], index=1)
-                        month = st.selectbox("Month", range(1, 13), index=5)
-                    
-                    if st.button("🔮 Predict Price with All Models", type="secondary"):
-                        # Create input array with all available features
-                        input_dict = {}
-                        for feature in available_features:
-                            if feature == 'Solarradiation':
-                                input_dict[feature] = solar_rad
-                            elif feature == 'Solarenergy':
-                                input_dict[feature] = solar_energy
-                            elif feature == 'Uvindex':
-                                input_dict[feature] = uv_index
-                            elif feature == 'Index Production':
-                                input_dict[feature] = production_idx
-                            elif feature == 'Year':
-                                input_dict[feature] = year
-                            elif feature == 'Month':
-                                input_dict[feature] = month
-                            else:
-                                # Use median for other features
-                                input_dict[feature] = X_train[feature].median()
-                        
-                        # Create input array in correct order
-                        input_array = np.array([[input_dict[feat] for feat in available_features]])
-                        
-                        # Scale input
-                        input_scaled = scaler.transform(input_array)
-                        
-                        # Get predictions from all models
-                        st.subheader("📈 Prediction Results from All Models")
-                        
-                        predictions = {}
-                        for name, model in models.items():
-                            pred = model.predict(input_scaled)[0]
-                            predictions[name] = pred
-                        
-                        # Display results in columns
-                        cols = st.columns(len(predictions))
-                        model_names = list(predictions.keys())
-                        
-                        for idx, model_name in enumerate(model_names):
-                            with cols[idx]:
-                                st.metric(
-                                    label=model_name,
-                                    value=f"${predictions[model_name]:.2f}",
-                                    delta="Predicted"
-                                )
-                        
-                        # Show comparison table
-                        st.subheader("📊 Model Comparison")
-                        comparison_df = pd.DataFrame({
-                            'Model': model_names,
-                            'Predicted Price': [predictions[m] for m in model_names]
-                        }).sort_values('Predicted Price', ascending=False)
-                        
-                        st.dataframe(comparison_df.style.format({'Predicted Price': '${:.2f}'}), 
-                                   use_container_width=True)
-                        
-                        best_model = comparison_df.iloc[0]['Model']
-                        best_price = comparison_df.iloc[0]['Predicted Price']
-                        
-                        st.success(f"💰 **Highest predicted price**: **{best_model}** at **${best_price:.2f}**")
-                else:
-                    st.error("Failed to train models. Please check your data.")
-            else:
-                st.info("Click '🚀 Train All Models' button to start training and see results.")
-
-elif page == "📈 Results Comparison":
-    st.markdown('<h2 class="sub-header">Model Performance Comparison</h2>', unsafe_allow_html=True)
+        st.error("'Price' column not found. Cannot proceed.")
+        st.stop()
     
-    # Check if models have been trained
-    if 'test_metrics' not in st.session_state:
-        st.warning("⚠️ No models have been trained yet!")
-        st.info("Please go to '🤖 Model Predictions' page and train models first.")
-    else:
-        train_metrics = st.session_state['train_metrics']
-        test_metrics = st.session_state['test_metrics']
+    # Get all numeric columns except Price as features
+    all_features = df.select_dtypes(include=[np.number]).columns.tolist()
+    
+    # Remove Price from features
+    if 'Price' in all_features:
+        all_features.remove('Price')
+    
+    if not all_features:
+        st.error("❌ No numeric features found in dataset!")
+        st.write("Please ensure your CSV has numeric columns (besides Price) for prediction.")
+        st.stop()
+    
+    # Let user select which features to use
+    st.sidebar.subheader("Feature Selection")
+    st.write(f"**Available numeric features:** {len(all_features)} found")
+    
+    # Show feature correlations with Price
+    correlations = {}
+    for feature in all_features:
+        corr = df[feature].corr(df['Price'])
+        correlations[feature] = corr
+    
+    # Sort features by absolute correlation
+    sorted_features = sorted(all_features, key=lambda x: abs(correlations.get(x, 0)), reverse=True)
+    
+    # Select features (default: top 5 by correlation)
+    selected_features = st.sidebar.multiselect(
+        "Select features to use:",
+        sorted_features,
+        default=sorted_features[:min(5, len(sorted_features))]
+    )
+    
+    if not selected_features:
+        st.warning("Please select at least one feature.")
+        st.stop()
+    
+    # Prepare data
+    X = df[selected_features].copy()
+    y = df['Price'].copy()
+    
+    # Handle missing values
+    X = X.fillna(X.median())
+    y = y.fillna(y.median())
+    
+    # Split data
+    test_size = st.sidebar.slider("Test size (%)", 10, 40, 20) / 100
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=test_size, random_state=42
+    )
+    
+    # Show data info
+    with st.expander("📊 Data Information"):
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Samples", len(X))
+        with col2:
+            st.metric("Training Samples", len(X_train))
+        with col3:
+            st.metric("Test Samples", len(X_test))
+        with col4:
+            st.metric("Features", len(selected_features))
         
-        # Create comparison DataFrame from calculated metrics
-        comparison_data = []
-        for model_name in test_metrics.keys():
-            comparison_data.append({
+        st.write("**Selected Features:**")
+        for feature in selected_features:
+            corr = correlations.get(feature, 0)
+            if corr > 0.5:
+                st.success(f"✓ {feature}: corr = {corr:.3f}")
+            elif corr > 0.3:
+                st.info(f"• {feature}: corr = {corr:.3f}")
+            elif corr > 0:
+                st.write(f"- {feature}: corr = {corr:.3f}")
+            elif corr < -0.3:
+                st.warning(f"⚠ {feature}: corr = {corr:.3f}")
+            else:
+                st.write(f"- {feature}: corr = {corr:.3f}")
+    
+    # Model selection
+    st.sidebar.subheader("Model Selection")
+    train_tuned = st.sidebar.checkbox("Train Tuned Models", value=True)
+    train_untuned = st.sidebar.checkbox("Train Untuned Models", value=True)
+    
+    model_options = {
+        'Linear Regression': st.sidebar.checkbox("Linear Regression", value=True),
+        'Random Forest': st.sidebar.checkbox("Random Forest", value=True),
+        'XGBoost': st.sidebar.checkbox("XGBoost", value=True),
+        'Gradient Boosting': st.sidebar.checkbox("Gradient Boosting", value=True),
+        'SVR': st.sidebar.checkbox("SVR", value=False),
+        'Decision Tree': st.sidebar.checkbox("Decision Tree", value=True)
+    }
+    
+    selected_models = [model for model, selected in model_options.items() if selected]
+    
+    if not selected_models:
+        st.warning("Please select at least one model.")
+        st.stop()
+    
+    # Train button
+    if st.button("🚀 Train Selected Models", type="primary"):
+        if not train_tuned and not train_untuned:
+            st.warning("Please select at least one model type.")
+            st.stop()
+        
+        with st.spinner("Training models..."):
+            # Clear previous results
+            for key in ['tuned_models', 'tuned_metrics', 'untuned_models', 'untuned_metrics']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            
+            # Train models
+            if train_tuned:
+                tuned_models, tuned_metrics, _ = train_models(
+                    X_train, y_train, X_test, y_test, model_type='tuned'
+                )
+                # Filter to selected models only
+                tuned_metrics = {k: v for k, v in tuned_metrics.items() if k in selected_models}
+                st.session_state.tuned_models = tuned_models
+                st.session_state.tuned_metrics = tuned_metrics
+            
+            if train_untuned:
+                untuned_models, untuned_metrics, _ = train_models(
+                    X_train, y_train, X_test, y_test, model_type='untuned'
+                )
+                # Filter to selected models only
+                untuned_metrics = {k: v for k, v in untuned_metrics.items() if k in selected_models}
+                st.session_state.untuned_models = untuned_models
+                st.session_state.untuned_metrics = untuned_metrics
+            
+            st.session_state.model_trained = True
+            st.session_state.X_test = X_test
+            st.session_state.y_test = y_test
+            st.session_state.selected_features = selected_features
+        
+        st.success("✅ Training completed!")
+    
+    # Show results if trained
+    if 'model_trained' in st.session_state and st.session_state.model_trained:
+        # Combine all results
+        all_results = {}
+        
+        if 'tuned_metrics' in st.session_state:
+            for model, metrics in st.session_state.tuned_metrics.items():
+                all_results[f"{model} (Tuned)"] = metrics
+        
+        if 'untuned_metrics' in st.session_state:
+            for model, metrics in st.session_state.untuned_metrics.items():
+                all_results[f"{model} (Untuned)"] = metrics
+        
+        if not all_results:
+            st.warning("No results available.")
+            st.stop()
+        
+        # Display results
+        st.subheader("📊 Model Performance")
+        
+        results_data = []
+        for model_name, metrics in all_results.items():
+            results_data.append({
                 'Model': model_name,
-                'Train R²': train_metrics[model_name]['R²'],
-                'Test R²': test_metrics[model_name]['R²'],
-                'R² Gap': abs(train_metrics[model_name]['R²'] - test_metrics[model_name]['R²']),
-                'Train RMSE': train_metrics[model_name]['RMSE'],
-                'Test RMSE': test_metrics[model_name]['RMSE'],
-                'Train MAE': train_metrics[model_name]['MAE'],
-                'Test MAE': test_metrics[model_name]['MAE']
+                'R²': metrics['R²'],
+                'RMSE': metrics['RMSE'],
+                'MAE': metrics['MAE'],
+                'Time (s)': metrics['Time']
             })
         
-        results_df = pd.DataFrame(comparison_data)
-        results_df = results_df.sort_values('Test R²', ascending=False).reset_index(drop=True)
+        results_df = pd.DataFrame(results_data)
+        results_df = results_df.sort_values('R²', ascending=False)
         
-        # Top 5 models based on Test R²
-        top_models = results_df.head(5)
-        
-        st.subheader("🏆 Top 5 Performing Models (Based on Test R²)")
-        
-        # Display top 5 models in columns with calculated metrics
-        cols = st.columns(5)
-        for idx, (_, model) in enumerate(top_models.iterrows()):
-            with cols[idx]:
-                st.markdown(f"### {model['Model']}")
-                st.metric("Test R²", f"{model['Test R²']:.3f}")
-                st.metric("Test RMSE", f"{model['Test RMSE']:.2f}")
-                st.metric("R² Gap", f"{model['R² Gap']:.3f}")
-        
-        st.divider()
-        
-        st.subheader("📊 Detailed Performance Comparison")
-        
-        # Highlight top 5 models
-        def highlight_top5(row):
-            if row.name < 5:
-                return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
-            return [''] * len(row)
-        
-        # Format the DataFrame for display
-        display_df = results_df.copy()
-        display_df['Train R²'] = display_df['Train R²'].apply(lambda x: f"{x:.4f}")
-        display_df['Test R²'] = display_df['Test R²'].apply(lambda x: f"{x:.4f}")
-        display_df['R² Gap'] = display_df['R² Gap'].apply(lambda x: f"{x:.4f}")
-        display_df['Train RMSE'] = display_df['Train RMSE'].apply(lambda x: f"{x:.2f}")
-        display_df['Test RMSE'] = display_df['Test RMSE'].apply(lambda x: f"{x:.2f}")
-        display_df['Train MAE'] = display_df['Train MAE'].apply(lambda x: f"{x:.2f}")
-        display_df['Test MAE'] = display_df['Test MAE'].apply(lambda x: f"{x:.2f}")
+        # Color code R²
+        def color_r2(val):
+            if val < 0:
+                return 'background-color: #ff4444; color: white'
+            elif val < 0.3:
+                return 'background-color: #ff9800'
+            elif val < 0.6:
+                return 'background-color: #ffeb3b'
+            elif val < 0.8:
+                return 'background-color: #8bc34a'
+            else:
+                return 'background-color: #4CAF50; color: white'
         
         st.dataframe(
-            display_df.style.apply(highlight_top5, axis=1),
-            use_container_width=True
+            results_df.style.format({
+                'R²': '{:.4f}',
+                'RMSE': '{:.2f}',
+                'MAE': '{:.2f}',
+                'Time (s)': '{:.2f}'
+            }).applymap(color_r2, subset=['R²']),
+            width='stretch'
         )
         
-        # Visual comparison of top 5 models
-        st.subheader("📈 Performance Visualization (Top 5 Models)")
+        # Warning for negative R²
+        negative_count = results_df[results_df['R²'] < 0].shape[0]
+        if negative_count > 0:
+            st.markdown('<div class="warning-box">', unsafe_allow_html=True)
+            st.warning(f"⚠️ {negative_count} models have negative R²!")
+            st.write("This means they perform worse than just predicting the average price.")
+            st.write("**Possible reasons:**")
+            st.write("1. Features don't correlate with Price")
+            st.write("2. Price has very low variation")
+            st.write("3. Not enough training data")
+            st.markdown('</div>', unsafe_allow_html=True)
         
-        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        # Select model for detailed view
+        st.subheader("🔍 Detailed Analysis")
         
-        # Test R² comparison
-        axes[0,0].barh(top_models['Model'], top_models['Test R²'], color='#2E8B57')
-        axes[0,0].set_xlabel('Test R² Score (Higher is Better)')
-        axes[0,0].set_title('Test Set R² Comparison')
-        axes[0,0].set_xlim([0, 1])
-        axes[0,0].invert_yaxis()
+        selected_result = st.selectbox(
+            "Select a model for detailed view:",
+            list(all_results.keys())
+        )
         
-        # R² Gap comparison (overfitting indicator)
-        axes[0,1].barh(top_models['Model'], top_models['R² Gap'], color='#FF6B6B')
-        axes[0,1].set_xlabel('R² Gap (Lower is Better)')
-        axes[0,1].set_title('Overfitting Indicator (Train vs Test R² Gap)')
-        axes[0,1].invert_yaxis()
+        # Get the model
+        if "(Tuned)" in selected_result:
+            model_name = selected_result.replace(" (Tuned)", "")
+            if 'tuned_models' in st.session_state and model_name in st.session_state.tuned_models:
+                model = st.session_state.tuned_models[model_name]
+                metrics = st.session_state.tuned_metrics[model_name]
+        else:
+            model_name = selected_result.replace(" (Untuned)", "")
+            if 'untuned_models' in st.session_state and model_name in st.session_state.untuned_models:
+                model = st.session_state.untuned_models[model_name]
+                metrics = st.session_state.untuned_metrics[model_name]
         
-        # Test RMSE comparison
-        axes[1,0].barh(top_models['Model'], top_models['Test RMSE'], color='#3CB371')
-        axes[1,0].set_xlabel('Test RMSE (Lower is Better)')
-        axes[1,0].set_title('Test Set RMSE Comparison')
-        axes[1,0].invert_yaxis()
+        # Show metrics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("R² Score", f"{metrics['R²']:.4f}")
+        with col2:
+            st.metric("RMSE", f"{metrics['RMSE']:.2f}")
+        with col3:
+            st.metric("MAE", f"{metrics['MAE']:.2f}")
         
-        # Train vs Test R² comparison (side-by-side)
-        x = np.arange(len(top_models['Model']))
-        width = 0.35
+        # Make predictions for visualization
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+        model.fit(X_train_scaled, y_train)  # Re-fit for consistency
+        y_pred = model.predict(X_test_scaled)
         
-        axes[1,1].bar(x - width/2, top_models['Train R²'], width, label='Train R²', color='#90EE90')
-        axes[1,1].bar(x + width/2, top_models['Test R²'], width, label='Test R²', color='#2E8B57')
-        axes[1,1].set_xlabel('Model')
-        axes[1,1].set_ylabel('R² Score')
-        axes[1,1].set_title('Train vs Test R² Comparison')
-        axes[1,1].set_xticks(x)
-        axes[1,1].set_xticklabels(top_models['Model'], rotation=45, ha='right')
-        axes[1,1].legend()
-        axes[1,1].set_ylim([0, 1])
+        # Visualization
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+        
+        # Scatter plot
+        ax1.scatter(y_test, y_pred, alpha=0.6, color='#2E8B57')
+        ax1.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 
+                'r--', linewidth=2, label='Perfect Prediction')
+        ax1.set_xlabel('Actual Price')
+        ax1.set_ylabel('Predicted Price')
+        ax1.set_title(f'{selected_result}: Actual vs Predicted')
+        ax1.legend()
+        ax1.grid(True, alpha=0.3)
+        
+        # Residuals
+        residuals = y_test - y_pred
+        ax2.scatter(y_pred, residuals, alpha=0.6, color='#FF6B6B')
+        ax2.axhline(y=0, color='r', linestyle='--', linewidth=2)
+        ax2.set_xlabel('Predicted Price')
+        ax2.set_ylabel('Residuals (Actual - Predicted)')
+        ax2.set_title('Residual Plot')
+        ax2.grid(True, alpha=0.3)
         
         plt.tight_layout()
         st.pyplot(fig)
-        
-        # Best model recommendation
-        best_model_row = results_df.iloc[0]
-        st.subheader("🎯 Best Model Recommendation")
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.markdown('<div class="best-model">', unsafe_allow_html=True)
-            st.markdown(f"### 🥇 {best_model_row['Model']}")
-            st.metric("Test R²", f"{best_model_row['Test R²']:.4f}")
-            st.metric("Test RMSE", f"{best_model_row['Test RMSE']:.2f}")
-            st.metric("R² Gap", f"{best_model_row['R² Gap']:.4f}")
-            st.markdown('</div>', unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("### Why this model is recommended:")
-            
-            if best_model_row['R² Gap'] < 0.05:
-                st.success("✅ **Excellent Generalization**: Minimal overfitting")
-                st.write(f"The model shows only {best_model_row['R² Gap']:.3f} gap between train and test performance.")
-            
-            if best_model_row['Test R²'] > 0.85:
-                st.success("✅ **High Predictive Power**: Explains most of the variance")
-                st.write(f"R² of {best_model_row['Test R²']:.3f} indicates strong predictive ability.")
-            
-            if best_model_row['Test RMSE'] < 500:
-                st.success("✅ **Low Error**: Accurate predictions")
-                st.write(f"Average prediction error is only ${best_model_row['Test RMSE']:.2f}.")
-            
-            st.write("### Recommended for production because:")
-            st.write("1. Best balance of accuracy and generalization")
-            st.write("2. Minimal overfitting risk")
-            st.write("3. Reliable performance on unseen data")
-        
-        # Export results option
-        st.subheader("📥 Export Results")
-        if st.button("💾 Download Performance Metrics as CSV"):
-            csv = results_df.to_csv(index=False)
-            st.download_button(
-                label="Click to download",
-                data=csv,
-                file_name="model_performance_metrics.csv",
-                mime="text/csv"
-            )
 
-elif page == "⚙️ Hyperparameter Tuning":
-    st.markdown('<h2 class="sub-header">Hyperparameter Tuning Configuration</h2>', unsafe_allow_html=True)
+elif page == "Results Comparison":
+    st.markdown('<h2 class="sub-header">Results Comparison</h2>', unsafe_allow_html=True)
     
-    st.info("""
-    Hyperparameter tuning helps find the optimal parameters for each machine learning model 
-    to achieve the best performance. This page shows the hyperparameter search spaces for each model.
-    """)
+    if 'model_trained' not in st.session_state:
+        st.warning("No models trained yet. Go to Model Predictions page first.")
+        st.stop()
     
-    # Display hyperparameter grids
-    param_grids = get_hyperparameter_grids()
+    # Combine results
+    all_results = {}
     
-    for model_name, params in param_grids.items():
-        with st.expander(f"📊 {model_name} Hyperparameters"):
-            st.write(f"**Number of parameter combinations to search:**")
-            
-            # Calculate total combinations
-            total_combs = 1
-            for key, values in params.items():
-                total_combs *= len(values)
-            
-            st.write(f"Total possible combinations: **{total_combs:,}**")
-            
-            # Display parameters
-            st.write("**Parameter search space:**")
-            for key, values in params.items():
-                st.write(f"- **{key}:** {values}")
-            
-            # Tuning recommendations
-            st.write("**Tuning Recommendations:**")
-            if model_name == 'Random Forest':
-                st.write("- Focus on `n_estimators` and `max_depth` first")
-                st.write("- Higher `n_estimators` usually improves performance but increases training time")
-                st.write("- Use `max_features='sqrt'` for high-dimensional data")
-            
-            elif model_name == 'XGBoost':
-                st.write("- `learning_rate` and `max_depth` are most important")
-                st.write("- Lower `learning_rate` with higher `n_estimators` often works better")
-                st.write("- `gamma` controls regularization (higher = more conservative)")
-            
-            elif model_name == 'Gradient Boosting':
-                st.write("- Balance `learning_rate` and `n_estimators`")
-                st.write("- Use `subsample` < 1.0 for stochastic gradient boosting")
-                st.write("- `max_depth` typically between 3-5 works well")
-            
-            elif model_name == 'SVR':
-                st.write("- `C` controls regularization (higher = less regularization)")
-                st.write("- `epsilon` defines the margin of tolerance")
-                st.write("- `kernel='rbf'` works well for non-linear problems")
-            
-            elif model_name == 'Decision Tree':
-                st.write("- `max_depth` prevents overfitting")
-                st.write("- `min_samples_split` and `min_samples_leaf` control tree growth")
-                st.write("- `criterion='friedman_mse'` often works well for regression")
+    if 'tuned_metrics' in st.session_state:
+        for model, metrics in st.session_state.tuned_metrics.items():
+            all_results[f"{model} (Tuned)"] = metrics
     
-    # Performance metrics explanation
-    st.subheader("📊 Performance Metrics Explained")
+    if 'untuned_metrics' in st.session_state:
+        for model, metrics in st.session_state.untuned_metrics.items():
+            all_results[f"{model} (Untuned)"] = metrics
     
-    metrics_cols = st.columns(3)
+    if not all_results:
+        st.warning("No results available for comparison.")
+        st.stop()
     
-    with metrics_cols[0]:
-        st.metric("R² Score", "0.0-1.0", "Higher is Better")
-        st.write("""
-        **Coefficient of Determination:**
-        - Measures how well predictions approximate actual values
-        - Range: 0 to 1 (higher is better)
-        - 1 = Perfect prediction
-        - 0 = No predictive power
-        - Negative = Worse than average
-        """)
+    # Create comparison table
+    comparison_data = []
+    for model_name, metrics in all_results.items():
+        comparison_data.append({
+            'Model': model_name,
+            'Type': 'Tuned' if '(Tuned)' in model_name else 'Untuned',
+            'Base Model': model_name.replace(' (Tuned)', '').replace(' (Untuned)', ''),
+            'R²': metrics['R²'],
+            'RMSE': metrics['RMSE'],
+            'MAE': metrics['MAE']
+        })
     
-    with metrics_cols[1]:
-        st.metric("RMSE", "Same units as target", "Lower is Better")
-        st.write("""
-        **Root Mean Squared Error:**
-        - Square root of average squared differences
-        - Sensitive to outliers
-        - In same units as target variable
-        - Penalizes large errors more heavily
-        """)
+    comp_df = pd.DataFrame(comparison_data)
+    comp_df = comp_df.sort_values('R²', ascending=False)
     
-    with metrics_cols[2]:
-        st.metric("MAE", "Same units as target", "Lower is Better")
-        st.write("""
-        **Mean Absolute Error:**
-        - Average absolute differences
-        - Less sensitive to outliers than RMSE
-        - Easier to interpret
-        - In same units as target variable
-        """)
+    # Display
+    def highlight_row(row):
+        if row['Type'] == 'Tuned':
+            return ['background-color: #e8f5e9'] * len(row)
+        else:
+            return ['background-color: #fff3e0'] * len(row)
     
-    # Overfitting analysis
-    st.subheader("🔍 Understanding Overfitting")
+    st.dataframe(
+        comp_df.style.format({
+            'R²': '{:.4f}',
+            'RMSE': '{:.2f}',
+            'MAE': '{:.2f}'
+        }).apply(highlight_row, axis=1),
+        width='stretch'
+    )
     
-    col1, col2 = st.columns(2)
+    # Best model
+    best_model = comp_df.iloc[0]
+    st.subheader("🎯 Best Model")
+    
+    col1, col2 = st.columns([1, 2])
     
     with col1:
-        st.markdown("""
-        ### Signs of Overfitting:
-        - **Large R² Gap**: Train R² >> Test R²
-        - **High Train Accuracy**: But poor test performance
-        - **Complex Model**: Too many parameters for the data
-        - **Noise Learning**: Model learns random fluctuations
-        """)
+        st.markdown(f"""
+        <div style='background-color: #FFF8DC; padding: 20px; border-radius: 10px; border: 2px solid #FFD700;'>
+            <h3 style='margin-top: 0;'>🥇 {best_model['Model']}</h3>
+            <p><strong>R²:</strong> {best_model['R²']:.4f}</p>
+            <p><strong>RMSE:</strong> {best_model['RMSE']:.2f}</p>
+            <p><strong>MAE:</strong> {best_model['MAE']:.2f}</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     with col2:
-        st.markdown("""
-        ### How to Prevent Overfitting:
-        - **Cross-Validation**: Use k-fold CV for reliable estimates
-        - **Regularization**: Add penalties for complexity
-        - **Feature Selection**: Remove irrelevant features
-        - **More Data**: Increase training samples
-        - **Simplify Model**: Reduce model complexity
-        """)
+        st.write("**Performance Analysis:**")
+        if best_model['R²'] < 0:
+            st.error("⚠️ Even the best model has negative R²!")
+            st.write("This indicates serious issues with your data or features.")
+        elif best_model['R²'] < 0.3:
+            st.warning("Poor predictive power")
+        elif best_model['R²'] < 0.6:
+            st.info("Moderate predictive power")
+        elif best_model['R²'] < 0.8:
+            st.success("Good predictive power")
+        else:
+            st.success("Excellent predictive power!")
+        
+        if "(Tuned)" in best_model['Model']:
+            st.info("This is a tuned model with optimized parameters.")
 
 # Footer
 st.markdown("---")
@@ -1150,8 +715,5 @@ st.markdown("""
 <div style='text-align: center'>
     <p>Developed using Streamlit | BSD3523 Machine Learning Project</p>
     <p>Group: CSM1 | University Malaysia Pahang Al-Sultan Abdullah</p>
-    <p style='font-size: 0.9em; color: #666;'>
-        5 Models with Real-time Metrics: Random Forest, XGBoost, Gradient Boosting, SVR, Decision Tree
-    </p>
 </div>
 """, unsafe_allow_html=True)
