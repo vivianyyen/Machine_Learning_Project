@@ -73,7 +73,7 @@ def load_data():
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         else:
             # If no Date column, create one with specified date range
-            df['Date'] = pd.date_range(start='2020-01-01', end='2025-08-25', periods=len(df))
+            df['Date'] = pd.date_range(start='2020-01-01', end='2022-08-25', periods=len(df))
         
         # Add temporal features
         df['Year'] = df['Date'].dt.year
