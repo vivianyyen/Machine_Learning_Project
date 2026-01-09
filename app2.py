@@ -4,21 +4,15 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from datetime import datetime
-from sklearn.model_selection import GridSearchCV, RandomizedSearchCV
-
-# Import machine learning libraries
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import GridSearchCV, RandomizedSearchCV, train_test_split, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.feature_selection import RFE
 from sklearn.linear_model import LinearRegression, Ridge, Lasso
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
-
-# Import top 5 models (added Decision Tree)
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
 from xgboost import XGBRegressor
 from sklearn.svm import SVR
 from sklearn.tree import DecisionTreeRegressor
-from sklearn.pipeline import make_pipeline
 
 # Page configuration
 st.set_page_config(
@@ -59,6 +53,18 @@ st.markdown("""
         padding: 10px;
         border-radius: 10px;
         background-color: #FFF8DC;
+    }
+    .train-metrics {
+        background-color: #f0f8ff;
+        padding: 10px;
+        border-radius: 5px;
+        border-left: 3px solid #3CB371;
+    }
+    .test-metrics {
+        background-color: #fff0f0;
+        padding: 10px;
+        border-radius: 5px;
+        border-left: 3px solid #FF6B6B;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -124,9 +130,9 @@ def get_hyperparameter_grids():
             'subsample': [0.6, 0.8, 1.0]
         },
         'SVR': {
-            'svr__C': [0.1, 1, 10, 100],
-            'svr__epsilon': [0.01, 0.1, 0.5, 1.0],
-            'svr__kernel': ['linear', 'rbf', 'poly']
+            'C': [0.1, 1, 10, 100],
+            'epsilon': [0.01, 0.1, 0.5, 1.0],
+            'kernel': ['linear', 'rbf', 'poly']
         },
         'Decision Tree': {
             'max_depth': [3, 5, 7, 10, 15, None],
@@ -139,14 +145,20 @@ def get_hyperparameter_grids():
     return param_grids
 
 @st.cache_resource
-def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_folds=3):
-    """Train models with hyperparameter tuning"""
+def train_models_with_tuning(X_train, y_train, X_test, y_test, tuning_method='grid', cv_folds=3):
+    """Train models with hyperparameter tuning and calculate metrics"""
     models = {}
     best_params = {}
-    search_results = {}
+    train_metrics = {}
+    test_metrics = {}
     
     # Get hyperparameter grids
     param_grids = get_hyperparameter_grids()
+    
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
     
     # 1. Random Forest Regressor
     rf = RandomForestRegressor(random_state=42, n_jobs=-1)
@@ -160,7 +172,7 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
             n_jobs=-1,
             verbose=0
         )
-    else:  # random search
+    else:
         rf_search = RandomizedSearchCV(
             rf,
             param_grids['Random Forest'],
@@ -175,7 +187,22 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
     rf_search.fit(X_train_scaled, y_train)
     models['Random Forest'] = rf_search.best_estimator_
     best_params['Random Forest'] = rf_search.best_params_
-    search_results['Random Forest'] = rf_search.cv_results_
+    
+    # Calculate metrics
+    y_train_pred = rf_search.best_estimator_.predict(X_train_scaled)
+    y_test_pred = rf_search.best_estimator_.predict(X_test_scaled)
+    
+    train_metrics['Random Forest'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['Random Forest'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
     
     # 2. XGBoost Regressor
     xgb = XGBRegressor(random_state=42, n_jobs=-1)
@@ -204,7 +231,22 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
     xgb_search.fit(X_train_scaled, y_train)
     models['XGBoost'] = xgb_search.best_estimator_
     best_params['XGBoost'] = xgb_search.best_params_
-    search_results['XGBoost'] = xgb_search.cv_results_
+    
+    # Calculate metrics
+    y_train_pred = xgb_search.best_estimator_.predict(X_train_scaled)
+    y_test_pred = xgb_search.best_estimator_.predict(X_test_scaled)
+    
+    train_metrics['XGBoost'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['XGBoost'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
     
     # 3. Gradient Boosting Regressor
     gbr = GradientBoostingRegressor(random_state=42)
@@ -233,14 +275,29 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
     gbr_search.fit(X_train_scaled, y_train)
     models['Gradient Boosting'] = gbr_search.best_estimator_
     best_params['Gradient Boosting'] = gbr_search.best_params_
-    search_results['Gradient Boosting'] = gbr_search.cv_results_
+    
+    # Calculate metrics
+    y_train_pred = gbr_search.best_estimator_.predict(X_train_scaled)
+    y_test_pred = gbr_search.best_estimator_.predict(X_test_scaled)
+    
+    train_metrics['Gradient Boosting'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['Gradient Boosting'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
     
     # 4. SVR (Support Vector Regression)
-    svr_pipeline = make_pipeline(StandardScaler(), SVR())
+    svr = SVR()
     
     if tuning_method == 'grid':
         svr_search = GridSearchCV(
-            svr_pipeline,
+            svr,
             param_grids['SVR'],
             cv=cv_folds,
             scoring='neg_mean_squared_error',
@@ -249,7 +306,7 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
         )
     else:
         svr_search = RandomizedSearchCV(
-            svr_pipeline,
+            svr,
             param_grids['SVR'],
             n_iter=20,
             cv=cv_folds,
@@ -262,9 +319,24 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
     svr_search.fit(X_train_scaled, y_train)
     models['SVR'] = svr_search.best_estimator_
     best_params['SVR'] = svr_search.best_params_
-    search_results['SVR'] = svr_search.cv_results_
     
-    # 5. Decision Tree Regressor (NEW)
+    # Calculate metrics
+    y_train_pred = svr_search.best_estimator_.predict(X_train_scaled)
+    y_test_pred = svr_search.best_estimator_.predict(X_test_scaled)
+    
+    train_metrics['SVR'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['SVR'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
+    
+    # 5. Decision Tree Regressor
     dt = DecisionTreeRegressor(random_state=42)
     
     if tuning_method == 'grid':
@@ -291,14 +363,36 @@ def train_models_with_tuning(X_train_scaled, y_train, tuning_method='grid', cv_f
     dt_search.fit(X_train_scaled, y_train)
     models['Decision Tree'] = dt_search.best_estimator_
     best_params['Decision Tree'] = dt_search.best_params_
-    search_results['Decision Tree'] = dt_search.cv_results_
     
-    return models, best_params, search_results
+    # Calculate metrics
+    y_train_pred = dt_search.best_estimator_.predict(X_train_scaled)
+    y_test_pred = dt_search.best_estimator_.predict(X_test_scaled)
+    
+    train_metrics['Decision Tree'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['Decision Tree'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
+    
+    return models, best_params, train_metrics, test_metrics, scaler
 
 @st.cache_resource
-def train_models_basic(X_train_scaled, y_train):
-    """Train models without hyperparameter tuning (for comparison)"""
+def train_models_basic(X_train, y_train, X_test, y_test):
+    """Train models without hyperparameter tuning and calculate metrics"""
     models = {}
+    train_metrics = {}
+    test_metrics = {}
+    
+    # Scale features
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
     
     # 1. Random Forest Regressor
     rf = RandomForestRegressor(
@@ -310,6 +404,22 @@ def train_models_basic(X_train_scaled, y_train):
     )
     rf.fit(X_train_scaled, y_train)
     models['Random Forest'] = rf
+    
+    # Calculate metrics
+    y_train_pred = rf.predict(X_train_scaled)
+    y_test_pred = rf.predict(X_test_scaled)
+    
+    train_metrics['Random Forest'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['Random Forest'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
     
     # 2. XGBoost Regressor
     xgb = XGBRegressor(
@@ -324,6 +434,22 @@ def train_models_basic(X_train_scaled, y_train):
     xgb.fit(X_train_scaled, y_train)
     models['XGBoost'] = xgb
     
+    # Calculate metrics
+    y_train_pred = xgb.predict(X_train_scaled)
+    y_test_pred = xgb.predict(X_test_scaled)
+    
+    train_metrics['XGBoost'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['XGBoost'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
+    
     # 3. Gradient Boosting Regressor
     gbr = GradientBoostingRegressor(
         n_estimators=100,
@@ -334,13 +460,42 @@ def train_models_basic(X_train_scaled, y_train):
     gbr.fit(X_train_scaled, y_train)
     models['Gradient Boosting'] = gbr
     
+    # Calculate metrics
+    y_train_pred = gbr.predict(X_train_scaled)
+    y_test_pred = gbr.predict(X_test_scaled)
+    
+    train_metrics['Gradient Boosting'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['Gradient Boosting'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
+    
     # 4. SVR (Support Vector Regression)
-    svr = make_pipeline(
-        StandardScaler(),
-        SVR(kernel='rbf', C=10, epsilon=0.1)
-    )
+    svr = SVR(kernel='rbf', C=10, epsilon=0.1)
     svr.fit(X_train_scaled, y_train)
     models['SVR'] = svr
+    
+    # Calculate metrics
+    y_train_pred = svr.predict(X_train_scaled)
+    y_test_pred = svr.predict(X_test_scaled)
+    
+    train_metrics['SVR'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['SVR'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
     
     # 5. Decision Tree Regressor
     dt = DecisionTreeRegressor(
@@ -351,7 +506,23 @@ def train_models_basic(X_train_scaled, y_train):
     dt.fit(X_train_scaled, y_train)
     models['Decision Tree'] = dt
     
-    return models
+    # Calculate metrics
+    y_train_pred = dt.predict(X_train_scaled)
+    y_test_pred = dt.predict(X_test_scaled)
+    
+    train_metrics['Decision Tree'] = {
+        'R²': r2_score(y_train, y_train_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_train, y_train_pred)),
+        'MAE': mean_absolute_error(y_train, y_train_pred)
+    }
+    
+    test_metrics['Decision Tree'] = {
+        'R²': r2_score(y_test, y_test_pred),
+        'RMSE': np.sqrt(mean_squared_error(y_test, y_test_pred)),
+        'MAE': mean_absolute_error(y_test, y_test_pred)
+    }
+    
+    return models, train_metrics, test_metrics, scaler
 
 # Load data
 df = load_data()
@@ -436,11 +607,6 @@ elif page == "🤖 Model Predictions":
                 X, y, test_size=0.2, random_state=42
             )
             
-            # Scale features
-            scaler = StandardScaler()
-            X_train_scaled = scaler.fit_transform(X_train)
-            X_test_scaled = scaler.transform(X_test)
-            
             # Training options
             st.sidebar.subheader("Training Options")
             use_hyperparameter_tuning = st.sidebar.checkbox("Use Hyperparameter Tuning", value=True)
@@ -452,340 +618,417 @@ elif page == "🤖 Model Predictions":
                 estimator = LinearRegression()
                 n_features = min(5, len(available_features))
                 rfe = RFE(estimator=estimator, n_features_to_select=n_features)
-                rfe.fit(X_train_scaled, y_train)
+                
+                # Scale for RFE
+                scaler_rfe = StandardScaler()
+                X_train_scaled_rfe = scaler_rfe.fit_transform(X_train)
+                
+                rfe.fit(X_train_scaled_rfe, y_train)
                 
                 selected_features = X_train.columns[rfe.support_].tolist()
                 st.write(f"**Selected {n_features} features:** {', '.join(selected_features)}")
-                
-                # Use RFE transformed data
-                X_train_rfe = rfe.transform(X_train_scaled)
-                X_test_rfe = rfe.transform(X_test_scaled)
             
-            # Train models
-            st.subheader("🤖 Training 5 Models")
-            progress_bar = st.progress(0)
-            status_text = st.empty()
-            
-            if use_hyperparameter_tuning:
-                status_text.text("Performing hyperparameter tuning... This may take a few minutes.")
-                models, best_params, search_results = train_models_with_tuning(
-                    X_train_scaled, y_train, tuning_method, cv_folds
-                )
-                tuning_status = "with Hyperparameter Tuning"
-            else:
-                status_text.text("Training models with default parameters...")
-                models = train_models_basic(X_train_scaled, y_train)
-                tuning_status = "with Default Parameters"
-                best_params = {}
-            
-            progress_bar.progress(1.0)
-            
-            if models:
-                status_text.text(f"✅ All models trained successfully {tuning_status}!")
+            # Train models button
+            if st.button("🚀 Train All Models", type="primary"):
+                with st.spinner("Training models... This may take a few minutes."):
+                    if use_hyperparameter_tuning:
+                        models, best_params, train_metrics, test_metrics, scaler = train_models_with_tuning(
+                            X_train, y_train, X_test, y_test, tuning_method, cv_folds
+                        )
+                        tuning_status = "with Hyperparameter Tuning"
+                    else:
+                        models, train_metrics, test_metrics, scaler = train_models_basic(
+                            X_train, y_train, X_test, y_test
+                        )
+                        tuning_status = "with Default Parameters"
+                        best_params = {}
                 
-                # Display best parameters if tuning was used
-                if use_hyperparameter_tuning and best_params:
-                    with st.expander("📋 Best Hyperparameters"):
-                        for model_name, params in best_params.items():
-                            st.write(f"**{model_name}:**")
-                            st.json(params)
-                
-                # Select a model to view predictions
-                st.subheader("📊 Model Predictions")
-                
-                selected_model = st.selectbox(
-                    "Choose a model to view predictions:",
-                    list(models.keys())
-                )
-                
-                model = models[selected_model]
-                
-                # Make predictions
-                y_pred = model.predict(X_test_scaled)
-                
-                # Calculate metrics
-                rmse = np.sqrt(mean_squared_error(y_test, y_pred))
-                mae = mean_absolute_error(y_test, y_pred)
-                r2 = r2_score(y_test, y_pred)
-                
-                # Display metrics
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("RMSE", f"{rmse:.2f}")
-                with col2:
-                    st.metric("MAE", f"{mae:.2f}")
-                with col3:
-                    st.metric("R² Score", f"{r2:.4f}")
-                
-                # Plot predictions vs actual
-                st.subheader("📈 Prediction Visualization")
-                
-                fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-                
-                # Scatter plot
-                ax1.scatter(y_test, y_pred, alpha=0.5, color='#2E8B57', s=30)
-                ax1.plot([y_test.min(), y_test.max()], 
-                        [y_test.min(), y_test.max()], 
-                        'r--', lw=2, label='Perfect Prediction')
-                ax1.set_xlabel('Actual Price ($)')
-                ax1.set_ylabel('Predicted Price ($)')
-                ax1.set_title(f'{selected_model}: Actual vs Predicted Prices')
-                ax1.legend()
-                ax1.grid(True, alpha=0.3)
-                
-                # Residual plot
-                residuals = y_test - y_pred
-                ax2.scatter(y_pred, residuals, alpha=0.5, color='#FF6B6B', s=30)
-                ax2.axhline(y=0, color='r', linestyle='--', lw=2)
-                ax2.set_xlabel('Predicted Price ($)')
-                ax2.set_ylabel('Residuals')
-                ax2.set_title(f'{selected_model}: Residual Plot')
-                ax2.grid(True, alpha=0.3)
-                
-                plt.tight_layout()
-                st.pyplot(fig)
-                
-                # Show sample predictions
-                st.subheader("📋 Sample Predictions (First 20 samples)")
-                results_df = pd.DataFrame({
-                    'Actual Price': y_test.values[:20],
-                    'Predicted Price': y_pred[:20],
-                    'Difference': y_pred[:20] - y_test.values[:20],
-                    'Error %': abs((y_pred[:20] - y_test.values[:20]) / y_test.values[:20] * 100)
-                })
-                st.dataframe(results_df.style.format({
-                    'Actual Price': '${:.2f}',
-                    'Predicted Price': '${:.2f}',
-                    'Difference': '${:.2f}',
-                    'Error %': '{:.2f}%'
-                }), use_container_width=True)
-                
-                # Feature importance for tree-based models
-                if hasattr(model, 'feature_importances_'):
-                    st.subheader("🎯 Feature Importance")
-                    importance = pd.DataFrame({
-                        'Feature': available_features,
-                        'Importance': model.feature_importances_
-                    }).sort_values('Importance', ascending=False)
+                if models:
+                    st.success(f"✅ All models trained successfully {tuning_status}!")
                     
-                    fig, ax = plt.subplots(figsize=(10, 6))
-                    ax.barh(importance['Feature'], importance['Importance'], color='#2E8B57')
-                    ax.set_xlabel('Importance Score')
-                    ax.set_title(f'{selected_model}: Feature Importance')
-                    ax.invert_yaxis()
+                    # Display best parameters if tuning was used
+                    if use_hyperparameter_tuning and best_params:
+                        with st.expander("📋 Best Hyperparameters"):
+                            for model_name, params in best_params.items():
+                                st.write(f"**{model_name}:**")
+                                st.json(params)
+                    
+                    # Store metrics in session state for comparison page
+                    st.session_state['train_metrics'] = train_metrics
+                    st.session_state['test_metrics'] = test_metrics
+                    st.session_state['models'] = models
+                    st.session_state['scaler'] = scaler
+                    st.session_state['X_train'] = X_train
+                    st.session_state['y_train'] = y_train
+                    st.session_state['X_test'] = X_test
+                    st.session_state['y_test'] = y_test
+                    st.session_state['available_features'] = available_features
+                    
+                    # Select a model to view predictions
+                    st.subheader("📊 Model Predictions")
+                    
+                    selected_model = st.selectbox(
+                        "Choose a model to view detailed predictions:",
+                        list(models.keys())
+                    )
+                    
+                    model = models[selected_model]
+                    
+                    # Make predictions for the selected model
+                    X_test_scaled = scaler.transform(X_test)
+                    y_pred = model.predict(X_test_scaled)
+                    
+                    # Display train vs test metrics comparison
+                    st.subheader("📈 Train vs Test Performance")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.markdown("### R² Score")
+                        st.metric("Train", f"{train_metrics[selected_model]['R²']:.4f}")
+                        st.metric("Test", f"{test_metrics[selected_model]['R²']:.4f}")
+                        diff_r2 = test_metrics[selected_model]['R²'] - train_metrics[selected_model]['R²']
+                        st.caption(f"Difference: {diff_r2:+.4f}")
+                    
+                    with col2:
+                        st.markdown("### RMSE")
+                        st.metric("Train", f"{train_metrics[selected_model]['RMSE']:.2f}")
+                        st.metric("Test", f"{test_metrics[selected_model]['RMSE']:.2f}")
+                        diff_rmse = test_metrics[selected_model]['RMSE'] - train_metrics[selected_model]['RMSE']
+                        st.caption(f"Difference: {diff_rmse:+.2f}")
+                    
+                    with col3:
+                        st.markdown("### MAE")
+                        st.metric("Train", f"{train_metrics[selected_model]['MAE']:.2f}")
+                        st.metric("Test", f"{test_metrics[selected_model]['MAE']:.2f}")
+                        diff_mae = test_metrics[selected_model]['MAE'] - train_metrics[selected_model]['MAE']
+                        st.caption(f"Difference: {diff_mae:+.2f}")
+                    
+                    # Overfitting/Underfitting analysis
+                    st.subheader("🔍 Overfitting Analysis")
+                    r2_gap = abs(train_metrics[selected_model]['R²'] - test_metrics[selected_model]['R²'])
+                    
+                    if r2_gap > 0.1:
+                        st.warning(f"⚠️ Potential overfitting detected! R² gap: {r2_gap:.3f}")
+                        st.info("The model performs much better on training data than test data. Consider:")
+                        st.write("1. Reducing model complexity")
+                        st.write("2. Adding regularization")
+                        st.write("3. Getting more training data")
+                    elif r2_gap < 0.05:
+                        st.success(f"✅ Good generalization! R² gap: {r2_gap:.3f}")
+                        st.info("The model performs similarly on training and test data.")
+                    else:
+                        st.info(f"📊 Moderate generalization. R² gap: {r2_gap:.3f}")
+                    
+                    # Plot predictions vs actual
+                    st.subheader("📊 Prediction Visualization")
+                    
+                    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
+                    
+                    # Scatter plot
+                    ax1.scatter(y_test, y_pred, alpha=0.5, color='#2E8B57', s=30)
+                    ax1.plot([y_test.min(), y_test.max()], 
+                            [y_test.min(), y_test.max()], 
+                            'r--', lw=2, label='Perfect Prediction')
+                    ax1.set_xlabel('Actual Price ($)')
+                    ax1.set_ylabel('Predicted Price ($)')
+                    ax1.set_title(f'{selected_model}: Test Set Predictions')
+                    ax1.legend()
+                    ax1.grid(True, alpha=0.3)
+                    
+                    # Residual plot
+                    residuals = y_test - y_pred
+                    ax2.scatter(y_pred, residuals, alpha=0.5, color='#FF6B6B', s=30)
+                    ax2.axhline(y=0, color='r', linestyle='--', lw=2)
+                    ax2.set_xlabel('Predicted Price ($)')
+                    ax2.set_ylabel('Residuals')
+                    ax2.set_title(f'{selected_model}: Residual Plot')
+                    ax2.grid(True, alpha=0.3)
+                    
                     plt.tight_layout()
                     st.pyplot(fig)
                     
-                    st.dataframe(importance.style.format({'Importance': '{:.4f}'}), use_container_width=True)
-                
-                # Interactive prediction
-                st.subheader("🎮 Make a Custom Prediction")
-                
-                col1, col2 = st.columns(2)
-                
-                with col1:
-                    solar_rad = st.slider("Solar Radiation", 
-                                         min_value=0.0, 
-                                         max_value=500.0, 
-                                         value=200.0, 
-                                         step=10.0)
-                    solar_energy = st.slider("Solar Energy", 
+                    # Show sample predictions
+                    st.subheader("📋 Sample Test Predictions (First 20 samples)")
+                    results_df = pd.DataFrame({
+                        'Actual Price': y_test.values[:20],
+                        'Predicted Price': y_pred[:20],
+                        'Difference': y_pred[:20] - y_test.values[:20],
+                        'Error %': abs((y_pred[:20] - y_test.values[:20]) / y_test.values[:20] * 100)
+                    })
+                    st.dataframe(results_df.style.format({
+                        'Actual Price': '${:.2f}',
+                        'Predicted Price': '${:.2f}',
+                        'Difference': '${:.2f}',
+                        'Error %': '{:.2f}%'
+                    }), use_container_width=True)
+                    
+                    # Feature importance for tree-based models
+                    if hasattr(model, 'feature_importances_'):
+                        st.subheader("🎯 Feature Importance")
+                        importance = pd.DataFrame({
+                            'Feature': available_features,
+                            'Importance': model.feature_importances_
+                        }).sort_values('Importance', ascending=False)
+                        
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.barh(importance['Feature'], importance['Importance'], color='#2E8B57')
+                        ax.set_xlabel('Importance Score')
+                        ax.set_title(f'{selected_model}: Feature Importance')
+                        ax.invert_yaxis()
+                        plt.tight_layout()
+                        st.pyplot(fig)
+                        
+                        st.dataframe(importance.style.format({'Importance': '{:.4f}'}), use_container_width=True)
+                    
+                    # Interactive prediction
+                    st.subheader("🎮 Make a Custom Prediction")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        solar_rad = st.slider("Solar Radiation", 
+                                             min_value=0.0, 
+                                             max_value=500.0, 
+                                             value=200.0, 
+                                             step=10.0)
+                        solar_energy = st.slider("Solar Energy", 
+                                                min_value=0.0, 
+                                                max_value=30.0, 
+                                                value=15.0, 
+                                                step=0.5)
+                        uv_index = st.slider("UV Index", 
                                             min_value=0.0, 
-                                            max_value=30.0, 
-                                            value=15.0, 
+                                            max_value=15.0, 
+                                            value=5.0, 
                                             step=0.5)
-                    uv_index = st.slider("UV Index", 
-                                        min_value=0.0, 
-                                        max_value=15.0, 
-                                        value=5.0, 
-                                        step=0.5)
-                
-                with col2:
-                    production_idx = st.slider("Production Index", 
-                                              min_value=50.0, 
-                                              max_value=150.0, 
-                                              value=100.0, 
-                                              step=5.0)
-                    year = st.selectbox("Year", [2020, 2021, 2022], index=1)
-                    month = st.selectbox("Month", range(1, 13), index=5)
-                
-                if st.button("Predict Price", type="primary"):
-                    # Create input array with all available features
-                    input_dict = {}
-                    for feature in available_features:
-                        if feature == 'Solarradiation':
-                            input_dict[feature] = solar_rad
-                        elif feature == 'Solarenergy':
-                            input_dict[feature] = solar_energy
-                        elif feature == 'Uvindex':
-                            input_dict[feature] = uv_index
-                        elif feature == 'Index Production':
-                            input_dict[feature] = production_idx
-                        elif feature == 'Year':
-                            input_dict[feature] = year
-                        elif feature == 'Month':
-                            input_dict[feature] = month
-                        else:
-                            # Use median for other features
-                            input_dict[feature] = X_train[feature].median()
                     
-                    # Create input array in correct order
-                    input_array = np.array([[input_dict[feat] for feat in available_features]])
+                    with col2:
+                        production_idx = st.slider("Production Index", 
+                                                  min_value=50.0, 
+                                                  max_value=150.0, 
+                                                  value=100.0, 
+                                                  step=5.0)
+                        year = st.selectbox("Year", [2020, 2021, 2022], index=1)
+                        month = st.selectbox("Month", range(1, 13), index=5)
                     
-                    # Scale input
-                    input_scaled = scaler.transform(input_array)
-                    
-                    # Get predictions from all models
-                    st.subheader("📈 Prediction Results from All Models")
-                    
-                    predictions = {}
-                    for name, model in models.items():
-                        pred = model.predict(input_scaled)[0]
-                        predictions[name] = pred
-                    
-                    # Display results in columns
-                    cols = st.columns(len(predictions))
-                    model_names = list(predictions.keys())
-                    
-                    for idx, model_name in enumerate(model_names):
-                        with cols[idx]:
-                            st.metric(
-                                label=model_name,
-                                value=f"${predictions[model_name]:.2f}",
-                                delta="Predicted"
-                            )
-                    
-                    # Show comparison table
-                    st.subheader("📊 Model Comparison")
-                    comparison_df = pd.DataFrame({
-                        'Model': model_names,
-                        'Predicted Price': [predictions[m] for m in model_names]
-                    }).sort_values('Predicted Price', ascending=False)
-                    
-                    st.dataframe(comparison_df.style.format({'Predicted Price': '${:.2f}'}), 
-                               use_container_width=True)
-                    
-                    best_model = comparison_df.iloc[0]['Model']
-                    best_price = comparison_df.iloc[0]['Predicted Price']
-                    
-                    st.success(f"💰 **Highest predicted price**: **{best_model}** at **${best_price:.2f}**")
+                    if st.button("🔮 Predict Price with All Models", type="secondary"):
+                        # Create input array with all available features
+                        input_dict = {}
+                        for feature in available_features:
+                            if feature == 'Solarradiation':
+                                input_dict[feature] = solar_rad
+                            elif feature == 'Solarenergy':
+                                input_dict[feature] = solar_energy
+                            elif feature == 'Uvindex':
+                                input_dict[feature] = uv_index
+                            elif feature == 'Index Production':
+                                input_dict[feature] = production_idx
+                            elif feature == 'Year':
+                                input_dict[feature] = year
+                            elif feature == 'Month':
+                                input_dict[feature] = month
+                            else:
+                                # Use median for other features
+                                input_dict[feature] = X_train[feature].median()
+                        
+                        # Create input array in correct order
+                        input_array = np.array([[input_dict[feat] for feat in available_features]])
+                        
+                        # Scale input
+                        input_scaled = scaler.transform(input_array)
+                        
+                        # Get predictions from all models
+                        st.subheader("📈 Prediction Results from All Models")
+                        
+                        predictions = {}
+                        for name, model in models.items():
+                            pred = model.predict(input_scaled)[0]
+                            predictions[name] = pred
+                        
+                        # Display results in columns
+                        cols = st.columns(len(predictions))
+                        model_names = list(predictions.keys())
+                        
+                        for idx, model_name in enumerate(model_names):
+                            with cols[idx]:
+                                st.metric(
+                                    label=model_name,
+                                    value=f"${predictions[model_name]:.2f}",
+                                    delta="Predicted"
+                                )
+                        
+                        # Show comparison table
+                        st.subheader("📊 Model Comparison")
+                        comparison_df = pd.DataFrame({
+                            'Model': model_names,
+                            'Predicted Price': [predictions[m] for m in model_names]
+                        }).sort_values('Predicted Price', ascending=False)
+                        
+                        st.dataframe(comparison_df.style.format({'Predicted Price': '${:.2f}'}), 
+                                   use_container_width=True)
+                        
+                        best_model = comparison_df.iloc[0]['Model']
+                        best_price = comparison_df.iloc[0]['Predicted Price']
+                        
+                        st.success(f"💰 **Highest predicted price**: **{best_model}** at **${best_price:.2f}**")
+                else:
+                    st.error("Failed to train models. Please check your data.")
             else:
-                st.error("Failed to train models. Please check your data.")
+                st.info("Click '🚀 Train All Models' button to start training and see results.")
 
 elif page == "📈 Results Comparison":
     st.markdown('<h2 class="sub-header">Model Performance Comparison</h2>', unsafe_allow_html=True)
     
-    # Create results table (with Decision Tree added)
-    results_data = {
-        'Model': ['XGBoost', 'Random Forest', 'Gradient Boosting', 'SVR', 'Decision Tree',
-                 'Linear Regression', 'Ridge', 'Lasso'],
-        'RMSE': [415.25, 445.32, 475.25, 505.42, 525.89, 600.12, 590.34, 595.67],
-        'MAE': [305.23, 315.45, 345.12, 375.45, 385.23, 420.34, 415.67, 418.90],
-        'R²': [0.905, 0.895, 0.881, 0.865, 0.848, 0.812, 0.818, 0.815]
-    }
-    
-    results_df = pd.DataFrame(results_data)
-    results_df = results_df.sort_values('R²', ascending=False).reset_index(drop=True)
-    
-    # Top 5 models (now including Decision Tree)
-    top_models = results_df.head(5)
-    
-    st.subheader("🏆 Top 5 Performing Models")
-    
-    # Display top 5 models in columns
-    cols = st.columns(5)
-    for idx, (_, model) in enumerate(top_models.iterrows()):
-        with cols[idx]:
-            st.markdown(f"### {model['Model']}")
-            st.metric("R²", f"{model['R²']:.3f}")
-            st.metric("RMSE", f"{model['RMSE']:.2f}")
-            st.metric("MAE", f"{model['MAE']:.2f}")
-    
-    st.divider()
-    
-    st.subheader("Full Model Comparison")
-    
-    # Highlight top 5 models
-    def highlight_top5(row):
-        if row.name < 5:
-            return ['background-color: #009fa0; font-weight: bold'] * len(row)
-        return [''] * len(row)
-    
-    st.dataframe(
-        results_df.style.apply(highlight_top5, axis=1).format({
-            'RMSE': '{:.2f}',
-            'MAE': '{:.2f}',
-            'R²': '{:.3f}'
-        }),
-        use_container_width=True
-    )
-    
-    # Visual comparison of top 5 models
-    st.subheader("📊 Performance Visualization (Top 5 Models)")
-    
-    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    
-    # R² comparison
-    axes[0,0].barh(top_models['Model'], top_models['R²'], color='#2E8B57')
-    axes[0,0].set_xlabel('R² Score (Higher is Better)')
-    axes[0,0].set_title('Coefficient of Determination')
-    axes[0,0].set_xlim([0.8, 0.95])
-    axes[0,0].invert_yaxis()
-    
-    # RMSE comparison
-    axes[0,1].barh(top_models['Model'], top_models['RMSE'], color='#3CB371')
-    axes[0,1].set_xlabel('RMSE (Lower is Better)')
-    axes[0,1].set_title('Root Mean Squared Error')
-    axes[0,1].invert_yaxis()
-    
-    # MAE comparison
-    axes[1,0].barh(top_models['Model'], top_models['MAE'], color='#90EE90')
-    axes[1,0].set_xlabel('MAE (Lower is Better)')
-    axes[1,0].set_title('Mean Absolute Error')
-    axes[1,0].invert_yaxis()
-    
-    # Training complexity comparison (simulated)
-    training_time = [2.5, 1.8, 3.2, 4.5, 0.3, 0.5, 0.6, 0.7]
-    axes[1,1].barh(top_models['Model'], training_time[:5], color='#98FB98')
-    axes[1,1].set_xlabel('Training Time (seconds)')
-    axes[1,1].set_title('Training Time Comparison')
-    axes[1,1].invert_yaxis()
-    
-    plt.tight_layout()
-    st.pyplot(fig)
-    
-    # Feature importance explanation
-    st.subheader("🎯 Key Insights")
-    
-    with st.expander("About the Top 5 Models"):
-        st.markdown("""
-        ### Top 5 Models Analysis:
+    # Check if models have been trained
+    if 'test_metrics' not in st.session_state:
+        st.warning("⚠️ No models have been trained yet!")
+        st.info("Please go to '🤖 Model Predictions' page and train models first.")
+    else:
+        train_metrics = st.session_state['train_metrics']
+        test_metrics = st.session_state['test_metrics']
         
-        1. **XGBoost** - Best performing model
-           - Excellent for complex non-linear relationships
-           - Handles missing values well
-           - Good at capturing interactions between features
+        # Create comparison DataFrame from calculated metrics
+        comparison_data = []
+        for model_name in test_metrics.keys():
+            comparison_data.append({
+                'Model': model_name,
+                'Train R²': train_metrics[model_name]['R²'],
+                'Test R²': test_metrics[model_name]['R²'],
+                'R² Gap': abs(train_metrics[model_name]['R²'] - test_metrics[model_name]['R²']),
+                'Train RMSE': train_metrics[model_name]['RMSE'],
+                'Test RMSE': test_metrics[model_name]['RMSE'],
+                'Train MAE': train_metrics[model_name]['MAE'],
+                'Test MAE': test_metrics[model_name]['MAE']
+            })
         
-        2. **Random Forest** - Most robust
-           - Less prone to overfitting
-           - Provides feature importance scores
-           - Works well with both numerical and categorical data
+        results_df = pd.DataFrame(comparison_data)
+        results_df = results_df.sort_values('Test R²', ascending=False).reset_index(drop=True)
         
-        3. **Gradient Boosting** - Good balance
-           - Sequential learning from errors
-           - Often more accurate than Random Forest
-           - Can be computationally expensive
+        # Top 5 models based on Test R²
+        top_models = results_df.head(5)
         
-        4. **SVR** - Best for linear patterns
-           - Effective in high-dimensional spaces
-           - Memory efficient
-           - Works well with clear margins of separation
+        st.subheader("🏆 Top 5 Performing Models (Based on Test R²)")
         
-        5. **Decision Tree** - Simple and interpretable
-           - Easy to understand and interpret
-           - Fast training and prediction
-           - Can visualize decision paths
-        """)
+        # Display top 5 models in columns with calculated metrics
+        cols = st.columns(5)
+        for idx, (_, model) in enumerate(top_models.iterrows()):
+            with cols[idx]:
+                st.markdown(f"### {model['Model']}")
+                st.metric("Test R²", f"{model['Test R²']:.3f}")
+                st.metric("Test RMSE", f"{model['Test RMSE']:.2f}")
+                st.metric("R² Gap", f"{model['R² Gap']:.3f}")
+        
+        st.divider()
+        
+        st.subheader("📊 Detailed Performance Comparison")
+        
+        # Highlight top 5 models
+        def highlight_top5(row):
+            if row.name < 5:
+                return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
+            return [''] * len(row)
+        
+        # Format the DataFrame for display
+        display_df = results_df.copy()
+        display_df['Train R²'] = display_df['Train R²'].apply(lambda x: f"{x:.4f}")
+        display_df['Test R²'] = display_df['Test R²'].apply(lambda x: f"{x:.4f}")
+        display_df['R² Gap'] = display_df['R² Gap'].apply(lambda x: f"{x:.4f}")
+        display_df['Train RMSE'] = display_df['Train RMSE'].apply(lambda x: f"{x:.2f}")
+        display_df['Test RMSE'] = display_df['Test RMSE'].apply(lambda x: f"{x:.2f}")
+        display_df['Train MAE'] = display_df['Train MAE'].apply(lambda x: f"{x:.2f}")
+        display_df['Test MAE'] = display_df['Test MAE'].apply(lambda x: f"{x:.2f}")
+        
+        st.dataframe(
+            display_df.style.apply(highlight_top5, axis=1),
+            use_container_width=True
+        )
+        
+        # Visual comparison of top 5 models
+        st.subheader("📈 Performance Visualization (Top 5 Models)")
+        
+        fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+        
+        # Test R² comparison
+        axes[0,0].barh(top_models['Model'], top_models['Test R²'], color='#2E8B57')
+        axes[0,0].set_xlabel('Test R² Score (Higher is Better)')
+        axes[0,0].set_title('Test Set R² Comparison')
+        axes[0,0].set_xlim([0, 1])
+        axes[0,0].invert_yaxis()
+        
+        # R² Gap comparison (overfitting indicator)
+        axes[0,1].barh(top_models['Model'], top_models['R² Gap'], color='#FF6B6B')
+        axes[0,1].set_xlabel('R² Gap (Lower is Better)')
+        axes[0,1].set_title('Overfitting Indicator (Train vs Test R² Gap)')
+        axes[0,1].invert_yaxis()
+        
+        # Test RMSE comparison
+        axes[1,0].barh(top_models['Model'], top_models['Test RMSE'], color='#3CB371')
+        axes[1,0].set_xlabel('Test RMSE (Lower is Better)')
+        axes[1,0].set_title('Test Set RMSE Comparison')
+        axes[1,0].invert_yaxis()
+        
+        # Train vs Test R² comparison (side-by-side)
+        x = np.arange(len(top_models['Model']))
+        width = 0.35
+        
+        axes[1,1].bar(x - width/2, top_models['Train R²'], width, label='Train R²', color='#90EE90')
+        axes[1,1].bar(x + width/2, top_models['Test R²'], width, label='Test R²', color='#2E8B57')
+        axes[1,1].set_xlabel('Model')
+        axes[1,1].set_ylabel('R² Score')
+        axes[1,1].set_title('Train vs Test R² Comparison')
+        axes[1,1].set_xticks(x)
+        axes[1,1].set_xticklabels(top_models['Model'], rotation=45, ha='right')
+        axes[1,1].legend()
+        axes[1,1].set_ylim([0, 1])
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # Best model recommendation
+        best_model_row = results_df.iloc[0]
+        st.subheader("🎯 Best Model Recommendation")
+        
+        col1, col2 = st.columns([1, 2])
+        
+        with col1:
+            st.markdown('<div class="best-model">', unsafe_allow_html=True)
+            st.markdown(f"### 🥇 {best_model_row['Model']}")
+            st.metric("Test R²", f"{best_model_row['Test R²']:.4f}")
+            st.metric("Test RMSE", f"{best_model_row['Test RMSE']:.2f}")
+            st.metric("R² Gap", f"{best_model_row['R² Gap']:.4f}")
+            st.markdown('</div>', unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("### Why this model is recommended:")
+            
+            if best_model_row['R² Gap'] < 0.05:
+                st.success("✅ **Excellent Generalization**: Minimal overfitting")
+                st.write(f"The model shows only {best_model_row['R² Gap']:.3f} gap between train and test performance.")
+            
+            if best_model_row['Test R²'] > 0.85:
+                st.success("✅ **High Predictive Power**: Explains most of the variance")
+                st.write(f"R² of {best_model_row['Test R²']:.3f} indicates strong predictive ability.")
+            
+            if best_model_row['Test RMSE'] < 500:
+                st.success("✅ **Low Error**: Accurate predictions")
+                st.write(f"Average prediction error is only ${best_model_row['Test RMSE']:.2f}.")
+            
+            st.write("### Recommended for production because:")
+            st.write("1. Best balance of accuracy and generalization")
+            st.write("2. Minimal overfitting risk")
+            st.write("3. Reliable performance on unseen data")
+        
+        # Export results option
+        st.subheader("📥 Export Results")
+        if st.button("💾 Download Performance Metrics as CSV"):
+            csv = results_df.to_csv(index=False)
+            st.download_button(
+                label="Click to download",
+                data=csv,
+                file_name="model_performance_metrics.csv",
+                mime="text/csv"
+            )
 
 elif page == "⚙️ Hyperparameter Tuning":
     st.markdown('<h2 class="sub-header">Hyperparameter Tuning Configuration</h2>', unsafe_allow_html=True)
@@ -841,57 +1084,24 @@ elif page == "⚙️ Hyperparameter Tuning":
                 st.write("- `min_samples_split` and `min_samples_leaf` control tree growth")
                 st.write("- `criterion='friedman_mse'` often works well for regression")
     
-    # Tuning strategies comparison
-    st.subheader("🎯 Tuning Strategies Comparison")
-    
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("""
-        ### Grid Search
-        **Pros:**
-        - Exhaustive search of all parameter combinations
-        - Guaranteed to find the best combination within the grid
-        - Easy to implement and understand
-        
-        **Cons:**
-        - Computationally expensive for large grids
-        - Can be very slow with many parameters
-        - May miss optimal values between grid points
-        """)
-    
-    with col2:
-        st.markdown("""
-        ### Random Search
-        **Pros:**
-        - Faster than grid search
-        - Can explore more parameter values
-        - Good for high-dimensional spaces
-        - Often finds good solutions faster
-        
-        **Cons:**
-        - May miss the optimal combination
-        - Results can vary between runs
-        - Less systematic than grid search
-        """)
-    
     # Performance metrics explanation
     st.subheader("📊 Performance Metrics Explained")
     
     metrics_cols = st.columns(3)
     
     with metrics_cols[0]:
-        st.metric("R² Score", "0.85-0.95", "Good Range")
+        st.metric("R² Score", "0.0-1.0", "Higher is Better")
         st.write("""
         **Coefficient of Determination:**
         - Measures how well predictions approximate actual values
         - Range: 0 to 1 (higher is better)
         - 1 = Perfect prediction
         - 0 = No predictive power
+        - Negative = Worse than average
         """)
     
     with metrics_cols[1]:
-        st.metric("RMSE", "400-600", "Lower is Better")
+        st.metric("RMSE", "Same units as target", "Lower is Better")
         st.write("""
         **Root Mean Squared Error:**
         - Square root of average squared differences
@@ -901,7 +1111,7 @@ elif page == "⚙️ Hyperparameter Tuning":
         """)
     
     with metrics_cols[2]:
-        st.metric("MAE", "300-400", "Lower is Better")
+        st.metric("MAE", "Same units as target", "Lower is Better")
         st.write("""
         **Mean Absolute Error:**
         - Average absolute differences
@@ -910,7 +1120,6 @@ elif page == "⚙️ Hyperparameter Tuning":
         - In same units as target variable
         """)
 
-
 # Footer
 st.markdown("---")
 st.markdown("""
@@ -918,7 +1127,7 @@ st.markdown("""
     <p>Developed using Streamlit | BSD3523 Machine Learning Project</p>
     <p>Group: CSM1 | University Malaysia Pahang Al-Sultan Abdullah</p>
     <p style='font-size: 0.9em; color: #666;'>
-        5 Models with Hyperparameter Tuning: Random Forest, XGBoost, Gradient Boosting, SVR, Decision Tree
+        5 Models with Real-time Metrics: Random Forest, XGBoost, Gradient Boosting, SVR, Decision Tree
     </p>
 </div>
 """, unsafe_allow_html=True)
