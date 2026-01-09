@@ -567,7 +567,6 @@ if page == "📊 Data Overview":
 
 elif page == "🤖 Model Predictions":
     st.markdown('<h2 class="sub-header">Model Training & Prediction</h2>', unsafe_allow_html=True)
-    @st.cache_data
     
     if 'Price' not in df.columns:
         st.error("'Price' column not found in dataset. Cannot proceed with modeling.")
