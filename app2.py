@@ -913,7 +913,7 @@ elif page == "Results Comparison":
         # Highlight top 5 models
         def highlight_top5(row):
             if row.name < 5:
-                return ['background-color: #e8f5e8; font-weight: bold'] * len(row)
+                return ['background-color: #1a478f; font-weight: bold'] * len(row)
             return [''] * len(row)
         
         # Format the DataFrame for display
