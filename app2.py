@@ -329,12 +329,17 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
             return None, None, None, f"Unknown model: {model_name}"
         
         # Train the model
-        start_time = time.time()
-        model.fit(X_train_scaled, y_train)
-        training_time = time.time() - start_time
-        
-        # Make predictions
-        y_pred = model.predict(X_test_scaled)
+        if model_name == 'SVR':
+            start_time = time.time()
+            model.fit(X_train, y_train)
+            training_time = time.time() - start_time
+            y_pred = model.predict(X_test_scaled)
+        else:
+            start_time = time.time()
+            model.fit(X_train, y_train)
+            training_time = time.time() - start_time 
+            # Make predictions
+            y_pred = model.predict(X_test)
         
         # Calculate metrics with checks
         try:
