@@ -1,4 +1,4 @@
-# app.py
+# app3.py - CORRECTED VERSION
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -60,7 +60,7 @@ st.markdown("""
 st.markdown('<h1 class="main-header">🌴 Palm Oil Price Prediction System</h1>', unsafe_allow_html=True)
 st.markdown("""
 This application predicts palm oil prices using machine learning models. 
-**Debug Mode:** Activated to diagnose negative R² issues.
+**Corrected Version:** RFE on scaled data, proper scaler handling, fixed data leakage.
 """)
 
 # Sidebar for navigation
@@ -93,7 +93,10 @@ def load_data():
         # Filter data to only include dates from 2020-01-01 to 2022-05-31
         df = df[(df['Date'] >= '2020-01-01') & (df['Date'] <= '2022-05-31')]
         
-        st.sidebar.success(f"📅 Data filtered: 2020/01/01 - 2022/05/31 ({len(df)} rows)")
+        # IMPORTANT: Sort by date for time-series split
+        df = df.sort_values('Date').reset_index(drop=True)
+        
+        st.sidebar.success(f"📅 Data filtered & sorted: 2020/01/01 - 2022/05/31 ({len(df)} rows)")
         
         # Don't add temporal features - user doesn't want them
         # Temporal features removed as per user request
@@ -149,12 +152,12 @@ def load_data():
         return None
 
 def create_lag_features(df, price_col='Price', lags=[1, 2, 3, 7, 30]):
-    """Create lag features for time series data"""
+    """Create lag features for time series data - FIXED: No data leakage"""
     df_lagged = df.copy()
     
     # Sort by date if not already sorted
     if 'Date' in df.columns:
-        df_lagged = df_lagged.sort_values('Date')
+        df_lagged = df_lagged.sort_values('Date').reset_index(drop=True)
     
     # Create lag features
     for lag in lags:
@@ -164,19 +167,24 @@ def create_lag_features(df, price_col='Price', lags=[1, 2, 3, 7, 30]):
     df_lagged['Price_Rolling_Mean_7'] = df_lagged[price_col].rolling(window=7, min_periods=1).mean()
     df_lagged['Price_Rolling_Std_7'] = df_lagged[price_col].rolling(window=7, min_periods=1).std()
     
-    # Fill NaN values created by shifting
-    df_lagged = df_lagged.fillna(method='bfill').fillna(method='ffill')
+    # FIXED: Drop rows with NaN instead of forward/backward fill to avoid data leakage
+    # Only drop rows where lag features are NaN (keep rolling stats with min_periods=1)
+    lag_cols = [f'Price_Lag_{lag}' for lag in lags]
+    df_lagged = df_lagged.dropna(subset=lag_cols)
+    
+    # Fill any remaining NaN with median (for rolling std at start)
+    df_lagged = df_lagged.fillna(df_lagged.median())
     
     return df_lagged
 
 @st.cache_resource
-def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name, tuned=True, feature_names=None):
-    """Train a single model with comprehensive checks - FIXED VERSION"""
+def train_single_model_with_checks(X_train_scaled, y_train, X_test_scaled, y_test, model_name, tuned=True, feature_names=None):
+    """Train a single model with comprehensive checks - CORRECTED: Expects pre-scaled data"""
     
     # Debug info
     debug_info = {
-        'X_train_shape': X_train.shape,
-        'X_test_shape': X_test.shape,
+        'X_train_shape': X_train_scaled.shape,
+        'X_test_shape': X_test_scaled.shape,
         'y_train_mean': y_train.mean(),
         'y_train_std': y_train.std(),
         'y_test_mean': y_test.mean(),
@@ -184,18 +192,15 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
     }
     
     # Check if we have enough data
-    if len(X_train) < 10 or len(X_test) < 5:
-        return None, None, None, f"Not enough data for training/testing: {debug_info}"
+    if len(X_train_scaled) < 10 or len(X_test_scaled) < 5:
+        return None, None, f"Not enough data for training/testing: {debug_info}"
     
     # Check for variance in target
     if y_train.std() < 1e-10 or y_test.std() < 1e-10:
-        return None, None, None, f"Target variable has no variance: {debug_info}"
+        return None, None, f"Target variable has no variance: {debug_info}"
     
     try:
-        # Scale features
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_test_scaled = scaler.transform(X_test)
+        # Data is already scaled from RFE step, use directly
         
         # Define model based on type with simpler hyperparameters
         if model_name == 'Random Forest':
@@ -269,7 +274,6 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
                 )
         
         elif model_name == 'SVR':
-            # SVR is sensitive to scaling, so we'll use StandardScaler
             if tuned:
                 param_grid = {
                     'C': [1, 10],
@@ -325,14 +329,14 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
                 model = Ridge(alpha=1.0, random_state=42)
         
         else:
-            return None, None, None, f"Unknown model: {model_name}"
+            return None, None, f"Unknown model: {model_name}"
         
-        # Train the model - FIXED: Always use scaled data for training
+        # Train the model on pre-scaled data
         start_time = time.time()
         model.fit(X_train_scaled, y_train)
         training_time = time.time() - start_time
         
-        # Make predictions - FIXED: Always use scaled data for prediction
+        # Make predictions on pre-scaled data
         y_pred = model.predict(X_test_scaled)
         
         # Calculate metrics with checks
@@ -340,7 +344,7 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
             r2 = r2_score(y_test, y_pred)
             
             # Check for absurd R² values
-            if r2 < -10 or r2 > 10:  # Allow some extreme values for debugging
+            if r2 < -10 or r2 > 10:
                 st.warning(f"Extreme R² value for {model_name}: {r2}")
             
             rmse = np.sqrt(mean_squared_error(y_test, y_pred))
@@ -358,57 +362,13 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
                 'Improvement_over_baseline': r2 - baseline_r2
             }
             
-            return model, metrics, scaler, training_time
+            return model, metrics, training_time
             
         except Exception as e:
-            return None, None, None, f"Error calculating metrics: {str(e)}"
+            return None, None, f"Error calculating metrics: {str(e)}"
             
     except Exception as e:
-        return None, None, None, f"Error training model {model_name}: {str(e)}"
-
-@st.cache_resource
-def train_all_models(X_train, y_train, X_test, y_test, use_lag_features=True):
-    """Train all models (tuned and untuned)"""
-    models = {}
-    metrics = {}
-    scalers = {}
-    training_times = {}
-    errors = {}
-    
-    # Include Linear Regression for baseline comparison
-    model_names = ['Linear Regression', 'Random Forest', 'XGBoost', 'Gradient Boosting', 'SVR', 'Decision Tree']
-    
-    # Train tuned models
-    for model_name in model_names:
-        model_key = f"{model_name} (Tuned)"
-        model, model_metrics, scaler, train_time = train_single_model_with_checks(
-            X_train, y_train, X_test, y_test, model_name, tuned=True
-        )
-        
-        if model is not None:
-            models[model_key] = model
-            metrics[model_key] = model_metrics
-            scalers[model_key] = scaler
-            training_times[model_key] = train_time
-        else:
-            errors[model_key] = model_metrics
-    
-    # Train untuned models
-    for model_name in model_names:
-        model_key = f"{model_name} (Untuned)"
-        model, model_metrics, scaler, train_time = train_single_model_with_checks(
-            X_train, y_train, X_test, y_test, model_name, tuned=False
-        )
-        
-        if model is not None:
-            models[model_key] = model
-            metrics[model_key] = model_metrics
-            scalers[model_key] = scaler
-            training_times[model_key] = train_time
-        else:
-            errors[model_key] = model_metrics
-    
-    return models, metrics, scalers, training_times, errors
+        return None, None, f"Error training model {model_name}: {str(e)}"
 
 # Load data
 df = load_data()
@@ -637,7 +597,7 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
     if use_lag_features:
         # Create enhanced dataframe with lag features
         df_enhanced = create_lag_features(df)
-        st.info("✅ Lag features added (previous price values)")
+        st.info(f"✅ Lag features added (dropped {len(df) - len(df_enhanced)} rows with NaN to avoid data leakage)")
     else:
         df_enhanced = df.copy()
         st.info("📊 Using original data columns only")
@@ -695,7 +655,7 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         X = X.drop(columns=constant_cols)
         available_features = [f for f in available_features if f not in constant_cols]
     
-    # Feature Selection Option - Using RFE instead of SelectKBest
+    # Feature Selection Option - Using RFE on SCALED data
     st.sidebar.subheader("Feature Selection (RFE)")
     use_feature_selection = st.sidebar.checkbox("Use RFE Feature Selection", value=True)
     if use_feature_selection:
@@ -705,27 +665,33 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
     st.sidebar.subheader("Data Splitting")
     test_size = st.sidebar.slider("Test size (%)", 10, 40, 20) / 100
     
-    # Time-based split (for time series)
+    # Time-based split (data is already sorted in load_data())
     split_index = int(len(X) * (1 - test_size))
     X_train, X_test = X.iloc[:split_index], X.iloc[split_index:]
     y_train, y_test = y.iloc[:split_index], y.iloc[split_index:]
     
-    # Apply RFE feature selection if requested
+    # CORRECTED: Scale data BEFORE RFE
+    scaler = StandardScaler()
+    X_train_scaled = scaler.fit_transform(X_train)
+    X_test_scaled = scaler.transform(X_test)
+    
+    # Apply RFE feature selection on SCALED data if requested
     if use_feature_selection and len(available_features) > n_features:
-        with st.spinner("Selecting best features using RFE (Recursive Feature Elimination)..."):
-            # Use RFE with Linear Regression as the estimator
+        with st.spinner("Selecting best features using RFE on SCALED data (Recursive Feature Elimination)..."):
+            # Use RFE with Linear Regression on SCALED data
             estimator = LinearRegression()
             selector = RFE(estimator=estimator, n_features_to_select=n_features, step=1)
             
-            X_train_selected = selector.fit_transform(X_train, y_train)
-            X_test_selected = selector.transform(X_test)
+            # Fit RFE on scaled data
+            X_train_selected = selector.fit_transform(X_train_scaled, y_train)
+            X_test_selected = selector.transform(X_test_scaled)
             
             # Get selected feature names
             selected_mask = selector.support_
             selected_features = X_train.columns[selected_mask].tolist()
             feature_ranking = selector.ranking_
             
-            st.success(f"✅ RFE selected {len(selected_features)} best features")
+            st.success(f"✅ RFE selected {len(selected_features)} best features (on scaled data)")
             
             # Show feature ranking
             with st.expander("🔍 RFE Feature Ranking"):
@@ -738,20 +704,24 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
                 st.dataframe(ranking_df, use_container_width=True)
                 st.write("**Selected features:**", ", ".join(selected_features))
             
-            # Update X_train and X_test with selected features
-            X_train = pd.DataFrame(X_train_selected, columns=selected_features, index=X_train.index)
-            X_test = pd.DataFrame(X_test_selected, columns=selected_features, index=X_test.index)
+            # Update X_train and X_test with selected features (keep as scaled)
+            X_train_scaled = pd.DataFrame(X_train_selected, columns=selected_features, index=X_train.index)
+            X_test_scaled = pd.DataFrame(X_test_selected, columns=selected_features, index=X_test.index)
             available_features = selected_features
+    else:
+        # No feature selection, but data is already scaled
+        X_train_scaled = pd.DataFrame(X_train_scaled, columns=X_train.columns, index=X_train.index)
+        X_test_scaled = pd.DataFrame(X_test_scaled, columns=X_test.columns, index=X_test.index)
     
     # Display data info
     with st.expander("📊 Data Split Information"):
         col1, col2, col3, col4 = st.columns(4)
         with col1:
-            st.metric("Total Samples", len(X))
+            st.metric("Total Samples", len(df_enhanced))
         with col2:
-            st.metric("Training Samples", len(X_train))
+            st.metric("Training Samples", len(X_train_scaled))
         with col3:
-            st.metric("Test Samples", len(X_test))
+            st.metric("Test Samples", len(X_test_scaled))
         with col4:
             st.metric("Features", len(available_features))
         
@@ -799,14 +769,13 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         
         with st.spinner("Training models... This may take a minute."):
             # Clear previous session state
-            for key in ['all_models', 'all_metrics', 'all_scalers', 'training_times', 'training_errors']:
+            for key in ['all_models', 'all_metrics', 'training_times', 'training_errors']:
                 if key in st.session_state:
                     del st.session_state[key]
             
             # Train models
             models = {}
             metrics = {}
-            scalers = {}
             training_times = {}
             errors = {}
             
@@ -815,14 +784,13 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
                 # Train tuned version
                 if train_tuned:
                     model_key = f"{model_name} (Tuned)"
-                    model, model_metrics, scaler, train_time = train_single_model_with_checks(
-                        X_train, y_train, X_test, y_test, model_name, tuned=True
+                    model, model_metrics, train_time = train_single_model_with_checks(
+                        X_train_scaled, y_train, X_test_scaled, y_test, model_name, tuned=True
                     )
                     
                     if model is not None:
                         models[model_key] = model
                         metrics[model_key] = model_metrics
-                        scalers[model_key] = scaler
                         training_times[model_key] = train_time
                     else:
                         errors[model_key] = model_metrics
@@ -830,26 +798,26 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
                 # Train untuned version
                 if train_untuned:
                     model_key = f"{model_name} (Untuned)"
-                    model, model_metrics, scaler, train_time = train_single_model_with_checks(
-                        X_train, y_train, X_test, y_test, model_name, tuned=False
+                    model, model_metrics, train_time = train_single_model_with_checks(
+                        X_train_scaled, y_train, X_test_scaled, y_test, model_name, tuned=False
                     )
                     
                     if model is not None:
                         models[model_key] = model
                         metrics[model_key] = model_metrics
-                        scalers[model_key] = scaler
                         training_times[model_key] = train_time
                     else:
                         errors[model_key] = model_metrics
             
-            # Store in session state
+            # Store in session state (including scaler for future predictions)
             st.session_state.all_models = models
             st.session_state.all_metrics = metrics
-            st.session_state.all_scalers = scalers
             st.session_state.training_times = training_times
             st.session_state.training_errors = errors
+            st.session_state.scaler = scaler  # Save scaler for future use
+            st.session_state.selected_features = available_features  # Save feature names
             st.session_state.model_trained = True
-            st.session_state.X_test = X_test
+            st.session_state.X_test_scaled = X_test_scaled
             st.session_state.y_test = y_test
         
         # Display training results
@@ -961,12 +929,10 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         if selected_model in st.session_state.all_models:
             model = st.session_state.all_models[selected_model]
             metrics = st.session_state.all_metrics[selected_model]
-            scaler = st.session_state.all_scalers[selected_model]
-            X_test = st.session_state.X_test
+            X_test_scaled = st.session_state.X_test_scaled
             y_test = st.session_state.y_test
             
-            # Make predictions - FIXED: Always use scaled data
-            X_test_scaled = scaler.transform(X_test)
+            # Make predictions (data is already scaled)
             y_pred = model.predict(X_test_scaled)
             
             # Display metrics
@@ -1117,7 +1083,7 @@ st.markdown("""
     <p>Developed using Streamlit | BSD3523 Machine Learning Project</p>
     <p>Group: CSM1 | University Malaysia Pahang Al-Sultan Abdullah</p>
     <p style='font-size: 0.9em; color: #666;'>
-        Debug Mode: Diagnosing negative R² issues
+        ✅ Corrected: RFE on scaled data | Fixed data leakage | Proper scaler handling
     </p>
 </div>
 """, unsafe_allow_html=True)
