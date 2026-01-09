@@ -79,6 +79,13 @@ app_mode = st.sidebar.radio(
     ["📊 Data Overview", "🔧 Data Processing", "🤖 Model Training", "📈 Results & Visualization", "🔮 Make Predictions"]
 )
 
+@st.cache_data
+def load_data():
+    """Load and prepare data"""
+    try:
+        # Try to load data
+        df = pd.read_csv("price.csv")
+    return df
 
 
 def preprocess_data(df):
