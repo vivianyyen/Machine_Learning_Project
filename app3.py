@@ -76,37 +76,12 @@ app_mode = st.sidebar.radio(
     ["📊 Data Overview", "🔧 Data Processing", "🤖 Model Training", "📈 Results & Visualization", "🔮 Make Predictions"]
 )
 
-# Helper functions
-def load_sample_data():
-    """Generate sample data for demonstration"""
-    dates = pd.date_range(start='2020-01-01', end='2022-08-25', freq='D')
-    
-    # Create sample weather data
-    np.random.seed(42)
-    n_samples = len(dates)
-    
-    sample_data = pd.DataFrame({
-        'Date': dates,
-        'Temperature': np.random.normal(28, 2, n_samples),
-        'Humidity': np.random.normal(75, 5, n_samples),
-        'Precipitation': np.random.exponential(5, n_samples),
-        'Windspeed': np.random.normal(10, 3, n_samples),
-        'Cloudcover': np.random.uniform(0, 100, n_samples),
-        'Dew': np.random.normal(22, 2, n_samples),
-        'Sealevelpressure': np.random.normal(1013, 5, n_samples),
-        'Solarradiation': np.random.normal(200, 50, n_samples),
-        'Solarenergy': np.random.normal(15, 5, n_samples),
-        'Uvindex': np.random.normal(8, 2, n_samples),
-        'Index Production': np.random.normal(100, 10, n_samples),
-        'Price': np.random.normal(5000, 1000, n_samples) * (1 + 0.001 * np.arange(n_samples)),
-        'Export Number (in Tonnes)': np.random.normal(100000, 20000, n_samples),
-        'USD': np.random.normal(4.2, 0.1, n_samples)
-    })
-    
-    # Add some seasonality
-    sample_data['Price'] += 500 * np.sin(2 * np.pi * sample_data.index / 365)
-    
-    return sample_data
+def load_data():
+    """Load and prepare data"""
+    try:
+        # Try to load data
+        df = pd.read_csv("price.csv")
+        
 
 def preprocess_data(df):
     """Preprocess the data"""
