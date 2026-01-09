@@ -514,7 +514,7 @@ def train_models_basic(X_train, y_train, X_test, y_test):
 # Load data
 df = load_data()
 
-if page == "📊 Data Overview":
+if page == "Data Overview":
     st.markdown('<h2 class="sub-header">Dataset Overview</h2>', unsafe_allow_html=True)
     
     col1, col2 = st.columns(2)
@@ -565,7 +565,7 @@ if page == "📊 Data Overview":
         with cols[3]:
             st.metric("Max", f"${price_stats['max']:.2f}")
 
-elif page == "🤖 Model Predictions":
+elif page == "Model Predictions":
     st.markdown('<h2 class="sub-header">Model Training & Prediction</h2>', unsafe_allow_html=True)
     
     if 'Price' not in df.columns:
@@ -864,13 +864,13 @@ elif page == "🤖 Model Predictions":
             else:
                 st.info("Click '🚀 Train All Models' button to start training and see results.")
 
-elif page == "📈 Results Comparison":
+elif page == "Results Comparison":
     st.markdown('<h2 class="sub-header">Model Performance Comparison</h2>', unsafe_allow_html=True)
     
     # Check if models have been trained
     if 'test_metrics' not in st.session_state:
         st.warning("⚠️ No models have been trained yet!")
-        st.info("Please go to '🤖 Model Predictions' page and train models first.")
+        st.info("Please go to 'Model Predictions' page and train models first.")
     else:
         train_metrics = st.session_state['train_metrics']
         test_metrics = st.session_state['test_metrics']
@@ -1017,7 +1017,7 @@ elif page == "📈 Results Comparison":
                 mime="text/csv"
             )
 
-elif page == "⚙️ Hyperparameter Tuning":
+elif page == "Hyperparameter Tuning":
     st.markdown('<h2 class="sub-header">Hyperparameter Tuning Configuration</h2>', unsafe_allow_html=True)
     
     st.info("""
