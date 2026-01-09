@@ -467,66 +467,84 @@ if page == "Data Overview":
         st.subheader("📊 Last 10 Rows")
         st.dataframe(df.tail(10), width='stretch')
     
-    st.subheader("📈 Yearly Price Trend Chart")
+    st.subheader("📈 Price Trend Chart")
     
     if 'Date' in df.columns and 'Price' in df.columns:
         # Create a copy of the dataframe for plotting
-        plot_df = df.copy()
+        plot_df = df.copy().sort_values('Date')
         
-        # Ensure we have a Year column
-        if 'Year' not in plot_df.columns:
-            plot_df['Year'] = plot_df['Date'].dt.year
+        # Create the line plot
+        fig, ax = plt.subplots(figsize=(15, 6))
         
-        # Create the line plot with yearly breakdown
-        fig, ax = plt.subplots(figsize=(15, 7))
+        # Single clean line plot
+        ax.plot(plot_df['Date'], plot_df['Price'], 
+               color='#2E8B57', linewidth=2.5, alpha=0.8)
         
-        # Get unique years in the data
-        years = sorted(plot_df['Year'].unique())
+        # Fill area under curve for better visibility
+        ax.fill_between(plot_df['Date'], plot_df['Price'], 
+                        alpha=0.2, color='#2E8B57')
         
-        # Use viridis colormap
-        colors = plt.cm.viridis(np.linspace(0, 1, len(years)))
+        # Styling
+        ax.set_xlabel('Date', fontsize=13, fontweight='bold')
+        ax.set_ylabel('Price ($)', fontsize=13, fontweight='bold')
+        ax.set_title('Palm Oil Price Trend Over Time', fontsize=16, fontweight='bold', pad=20)
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.7)
         
-        # Plot each year separately
-        for year, color in zip(years, colors):
-            year_data = plot_df[plot_df['Year'] == year]
-            if len(year_data) > 0:
-                ax.plot(year_data['Date'], year_data['Price'], 
-                       label=str(year), color=color, linewidth=2)
+        # Add min/max markers
+        max_idx = plot_df['Price'].idxmax()
+        min_idx = plot_df['Price'].idxmin()
+        ax.scatter(plot_df.loc[max_idx, 'Date'], plot_df.loc[max_idx, 'Price'], 
+                  color='red', s=100, zorder=5, label=f'Max: ${plot_df.loc[max_idx, "Price"]:.2f}')
+        ax.scatter(plot_df.loc[min_idx, 'Date'], plot_df.loc[min_idx, 'Price'], 
+                  color='blue', s=100, zorder=5, label=f'Min: ${plot_df.loc[min_idx, "Price"]:.2f}')
         
-        ax.set_xlabel('Date', fontsize=12)
-        ax.set_ylabel('Price ($)', fontsize=12)
-        ax.set_title('Palm Oil Price Trends by Year', fontsize=14, fontweight='bold')
-        ax.grid(True, alpha=0.3)
-        ax.legend(title='Year', title_fontsize=12, fontsize=10)
+        ax.legend(loc='upper left', fontsize=10, framealpha=0.9)
         
-        # Format x-axis dates
-        plt.xticks(rotation=45)
+        # Format x-axis
+        plt.xticks(rotation=45, ha='right')
         plt.tight_layout()
         st.pyplot(fig)
         
-        # Statistical analysis by year
-        st.subheader("📊 Yearly Statistics")
+        # Price statistics summary
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Average Price", f"${plot_df['Price'].mean():.2f}")
+        with col2:
+            st.metric("Price Range", f"${plot_df['Price'].max() - plot_df['Price'].min():.2f}")
+        with col3:
+            st.metric("Volatility (Std)", f"${plot_df['Price'].std():.2f}")
+        with col4:
+            price_change = plot_df['Price'].iloc[-1] - plot_df['Price'].iloc[0]
+            st.metric("Total Change", f"${price_change:.2f}", 
+                     delta=f"{(price_change/plot_df['Price'].iloc[0]*100):.1f}%")
         
-        yearly_stats = []
-        for year in years:
-            year_data = plot_df[plot_df['Year'] == year]['Price']
-            if len(year_data) > 0:
-                yearly_stats.append({
-                    'Year': year,
-                    'Count': len(year_data),
-                    'Mean': year_data.mean(),
-                    'Std': year_data.std(),
-                    'Min': year_data.min(),
-                    'Max': year_data.max()
-                })
-        
-        yearly_df = pd.DataFrame(yearly_stats)
-        st.dataframe(yearly_df.style.format({
-            'Mean': '${:.2f}',
-            'Std': '${:.2f}',
-            'Min': '${:.2f}',
-            'Max': '${:.2f}'
-        }), width='stretch')
+        # Statistical analysis by year (in expander to keep it clean)
+        with st.expander("📊 View Yearly Statistics"):
+            # Ensure we have a Year column
+            if 'Year' not in plot_df.columns:
+                plot_df['Year'] = plot_df['Date'].dt.year
+            
+            years = sorted(plot_df['Year'].unique())
+            yearly_stats = []
+            for year in years:
+                year_data = plot_df[plot_df['Year'] == year]['Price']
+                if len(year_data) > 0:
+                    yearly_stats.append({
+                        'Year': year,
+                        'Count': len(year_data),
+                        'Mean': year_data.mean(),
+                        'Std': year_data.std(),
+                        'Min': year_data.min(),
+                        'Max': year_data.max()
+                    })
+            
+            yearly_df = pd.DataFrame(yearly_stats)
+            st.dataframe(yearly_df.style.format({
+                'Mean': '${:.2f}',
+                'Std': '${:.2f}',
+                'Min': '${:.2f}',
+                'Max': '${:.2f}'
+            }), use_container_width=True)
     
     # Feature correlation analysis
     st.subheader("🔗 Feature Correlations with Price")
