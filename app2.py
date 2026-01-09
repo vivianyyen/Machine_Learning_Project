@@ -532,7 +532,7 @@ if page == "Data Overview":
             buffer.append(f"**Date Range:** {df['Date'].min().date()} to {df['Date'].max().date()}\n")
         if 'Price' in df.columns:
             buffer.append(f"**Average Price:** $ {df['Price'].mean():.2f}\n\n")
-            buffer.append(f"**Price Range:** $ {df['Price'].min():.2f}-$ {df['Price'].max():.2f}")
+            buffer.append(f"**Price Range:** ${df['Price'].min():.2f}to ${df['Price'].max():.2f}")
         
         st.markdown("\n".join(buffer))
     
