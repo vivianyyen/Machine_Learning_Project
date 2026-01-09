@@ -269,7 +269,7 @@ def train_single_model_with_checks(X_train, y_train, X_test, y_test, model_name,
                     random_state=42
                 )
         
-        elif model_name == 'SVR':
+        elif model_name == 'SVR' or 'Linear Regression':
             # SVR is sensitive to scaling, so we'll use StandardScaler
             if tuned:
                 param_grid = {
