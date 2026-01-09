@@ -87,14 +87,6 @@ def load_data():
     # Load your data - adjust filename as needed
     df = pd.read_csv("price.csv")
     
-    # Ensure Date column is datetime
-    if 'Date' in df.columns:
-        df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
-    
-    # Add year and month columns if not present
-    if 'Date' in df.columns:
-        df['Year'] = df['Date'].dt.year
-        df['Month'] = df['Date'].dt.month
     
     # Fill missing values
     numeric_cols = df.select_dtypes(include=[np.number]).columns
