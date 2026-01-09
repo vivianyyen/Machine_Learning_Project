@@ -95,14 +95,8 @@ def load_data():
         
         st.sidebar.success(f"📅 Data filtered: 2020/01/01 - 2022/05/31 ({len(df)} rows)")
         
-        # Add temporal features
-        df['Year'] = df['Date'].dt.year
-        df['Month'] = df['Date'].dt.month
-        df['Day'] = df['Date'].dt.day
-        df['DayOfYear'] = df['Date'].dt.dayofyear
-        df['Quarter'] = df['Date'].dt.quarter
-        df['WeekOfYear'] = df['Date'].dt.isocalendar().week
-        df['DayOfWeek'] = df['Date'].dt.dayofweek
+        # Don't add temporal features - user doesn't want them
+        # Temporal features removed as per user request
         
         # Check if we have a Price column
         if 'Price' not in df.columns:
@@ -635,7 +629,7 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         st.stop()
     
     # Feature Engineering Section
-    st.markdown("### 🔧 Feature Engineering")
+    st.markdown("### 🔧 Feature Selection")
     
     # Option to use lag features or not
     use_lag_features = st.sidebar.checkbox("Add Lag Features (Previous Prices)", value=False)
@@ -648,21 +642,19 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         df_enhanced = df.copy()
         st.info("📊 Using original data columns only")
     
-    # Get all numeric columns except Price
+    # Get all numeric columns except Price and Date
     numeric_cols = df_enhanced.select_dtypes(include=[np.number]).columns.tolist()
     
-    # Remove Price and Date-related columns we don't want as features
-    exclude_cols = ['Price']
+    # Remove Price and any temporal/derived columns
+    exclude_cols = ['Price', 'Year', 'Month', 'Day', 'DayOfYear', 'Quarter', 'WeekOfYear', 'DayOfWeek']
     available_features = [col for col in numeric_cols if col not in exclude_cols]
     
-    # Prioritize original data columns over derived features
-    original_features = [f for f in available_features if not any(x in f for x in ['Lag', 'Rolling', 'Year', 'Month', 'Day', 'Quarter', 'Week'])]
-    temporal_features = ['Year', 'Month', 'Day', 'DayOfYear', 'Quarter', 'WeekOfYear', 'DayOfWeek']
-    temporal_features = [f for f in temporal_features if f in available_features]
+    # Separate original features from lag features
+    original_features = [f for f in available_features if not any(x in f for x in ['Lag', 'Rolling'])]
     lag_features = [f for f in available_features if 'Lag' in f or 'Rolling' in f]
     
-    # Reorder: original features first, then temporal, then lag
-    available_features = original_features + temporal_features + lag_features
+    # Prioritize: original features first, then lag if enabled
+    available_features = original_features + (lag_features if use_lag_features else [])
     
     if len(available_features) < 1:
         st.error("No features available for modeling!")
@@ -677,16 +669,12 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
             st.write(f"**🔹 Original Data Features ({len(original_features)}):**")
             st.write(", ".join(original_features))
         
-        if temporal_features:
-            st.write(f"**📅 Temporal Features ({len(temporal_features)}):**")
-            st.write(", ".join(temporal_features))
-        
         if lag_features and use_lag_features:
             st.write(f"**⏮️ Lag Features ({len(lag_features)}):**")
             st.write(", ".join(lag_features))
         
         if not original_features and not lag_features:
-            st.warning("⚠️ No suitable features found - only temporal features available")
+            st.error("❌ No features available for modeling!")
     
     # Prepare features and target
     X = df_enhanced[available_features].copy()
@@ -707,9 +695,9 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
         X = X.drop(columns=constant_cols)
         available_features = [f for f in available_features if f not in constant_cols]
     
-    # Feature Selection Option - FIXED: Changed default from 10 to 5
-    st.sidebar.subheader("Feature Selection")
-    use_feature_selection = st.sidebar.checkbox("Use Feature Selection", value=True)
+    # Feature Selection Option - Using RFE instead of SelectKBest
+    st.sidebar.subheader("Feature Selection (RFE)")
+    use_feature_selection = st.sidebar.checkbox("Use RFE Feature Selection", value=True)
     if use_feature_selection:
         n_features = st.sidebar.slider("Number of features to select", 3, min(20, len(available_features)), 5)
     
@@ -722,20 +710,33 @@ print(f"Sample prices: {df['Price'].head(10).tolist()}")
     X_train, X_test = X.iloc[:split_index], X.iloc[split_index:]
     y_train, y_test = y.iloc[:split_index], y.iloc[split_index:]
     
-    # Apply feature selection if requested
+    # Apply RFE feature selection if requested
     if use_feature_selection and len(available_features) > n_features:
-        with st.spinner("Selecting best features..."):
-            # Use mutual information for feature selection
-            selector = SelectKBest(score_func=f_regression, k=n_features)
+        with st.spinner("Selecting best features using RFE (Recursive Feature Elimination)..."):
+            # Use RFE with Linear Regression as the estimator
+            estimator = LinearRegression()
+            selector = RFE(estimator=estimator, n_features_to_select=n_features, step=1)
+            
             X_train_selected = selector.fit_transform(X_train, y_train)
             X_test_selected = selector.transform(X_test)
             
             # Get selected feature names
-            selected_mask = selector.get_support()
+            selected_mask = selector.support_
             selected_features = X_train.columns[selected_mask].tolist()
+            feature_ranking = selector.ranking_
             
-            st.success(f"Selected {len(selected_features)} best features")
-            st.write("**Selected features:**", ", ".join(selected_features))
+            st.success(f"✅ RFE selected {len(selected_features)} best features")
+            
+            # Show feature ranking
+            with st.expander("🔍 RFE Feature Ranking"):
+                ranking_df = pd.DataFrame({
+                    'Feature': X_train.columns,
+                    'Rank': feature_ranking,
+                    'Selected': selected_mask
+                }).sort_values('Rank')
+                
+                st.dataframe(ranking_df, use_container_width=True)
+                st.write("**Selected features:**", ", ".join(selected_features))
             
             # Update X_train and X_test with selected features
             X_train = pd.DataFrame(X_train_selected, columns=selected_features, index=X_train.index)
