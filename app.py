@@ -88,7 +88,14 @@ def load_data():
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
         else:
             # If no Date column, create one with specified date range
-            df['Date'] = pd.date_range(start='2020-01-01', end='2025-08-25', periods=len(df))
+            df['Date'] = pd.date_range(start='2020-01-01', end='2025-05-31', periods=len(df))
+        
+        # Filter data to only include dates up to May 31st of any year
+        df = df[df['Date'].dt.month <= 5]
+        # If you want specific year, uncomment and modify:
+        # df = df[df['Date'] <= '2025-05-31']
+        
+        st.sidebar.success(f"📅 Data filtered: up to May 31st ({len(df)} rows)")
         
         # Add temporal features
         df['Year'] = df['Date'].dt.year
