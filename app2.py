@@ -363,18 +363,85 @@ if page == "Data Overview":
         
         st.write("\n\n".join(buffer))
     
-    # Line chart of price over time
+    # Line chart of price over time with yearly breakdown
     if 'Date' in df.columns and 'Price' in df.columns:
-        st.subheader("📈 Price Trend Chart")
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.plot(df['Date'], df['Price'], linewidth=2, color='#2E8B57')
-        ax.set_xlabel('Date')
-        ax.set_ylabel('Price ($)')
-        ax.set_title('Palm Oil Price Trend (2020-2025)')
+        st.subheader("📈 Yearly Price Trend Chart")
+        
+        # Create a copy of the dataframe for plotting
+        plot_df = df.copy()
+        
+        # Ensure we have a Year column
+        if 'Year' not in plot_df.columns:
+            plot_df['Year'] = plot_df['Date'].dt.year
+        
+        # Create the line plot with yearly breakdown
+        fig, ax = plt.subplots(figsize=(15, 7))
+        
+        # Get unique years in the data
+        years = sorted(plot_df['Year'].unique())
+        
+        # Use viridis colormap
+        colors = plt.cm.viridis(np.linspace(0, 1, len(years)))
+        
+        # Plot each year separately
+        for year, color in zip(years, colors):
+            year_data = plot_df[plot_df['Year'] == year]
+            if len(year_data) > 0:
+                ax.plot(year_data['Date'], year_data['Price'], 
+                       label=str(year), color=color, linewidth=2)
+        
+        ax.set_xlabel('Date', fontsize=12)
+        ax.set_ylabel('Price ($)', fontsize=12)
+        ax.set_title('Palm Oil Price Trends by Year', fontsize=14, fontweight='bold')
         ax.grid(True, alpha=0.3)
+        ax.legend(title='Year', title_fontsize=12, fontsize=10)
+        
+        # Format x-axis dates
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
+        
+        # Also show a boxplot of prices by year for comparison
+        st.subheader("📊 Yearly Price Distribution")
+        
+        fig2, ax2 = plt.subplots(figsize=(10, 6))
+        
+        # Create boxplot by year
+        box_data = []
+        box_labels = []
+        for year in years:
+            year_prices = plot_df[plot_df['Year'] == year]['Price'].dropna()
+            if len(year_prices) > 0:
+                box_data.append(year_prices)
+                box_labels.append(str(year))
+        
+        if box_data:
+            bp = ax2.boxplot(box_data, labels=box_labels, patch_artist=True)
+            
+            # Color the boxes with viridis colors
+            for patch, color in zip(bp['boxes'], colors[:len(box_data)]):
+                patch.set_facecolor(color)
+                patch.set_alpha(0.7)
+            
+            # Color the median lines
+            for median in bp['medians']:
+                median.set_color('red')
+                median.set_linewidth(2)
+            
+            ax2.set_xlabel('Year', fontsize=12)
+            ax2.set_ylabel('Price ($)', fontsize=12)
+            ax2.set_title('Price Distribution by Year', fontsize=14, fontweight='bold')
+            ax2.grid(True, alpha=0.3, axis='y')
+            
+            # Add mean markers
+            for i, year_data in enumerate(box_data, 1):
+                mean_price = year_data.mean()
+                ax2.plot(i, mean_price, 'o', color='black', markersize=8)
+                ax2.text(i, mean_price, f' ${mean_price:.2f}', 
+                        ha='center', va='bottom', fontweight='bold')
+            
+            plt.tight_layout()
+            st.pyplot(fig2)
     
     # Basic statistics
     st.subheader("📊 Statistical Summary")
