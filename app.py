@@ -78,11 +78,6 @@ def load_data():
         # Log data loading
         st.sidebar.info(f"Loaded {len(df)} rows, {len(df.columns)} columns")
         
-        # Display column names for debugging
-        st.sidebar.write("**Columns in dataset:**")
-        for col in df.columns:
-            st.sidebar.write(f"- {col}")
-        
         # Ensure Date column is datetime
         if 'Date' in df.columns:
             df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
