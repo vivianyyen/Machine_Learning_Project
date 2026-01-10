@@ -68,10 +68,17 @@ models = {
 }
 
 param_grids = {
-    "Decision Tree": {"max_depth": [3, 5, 10]},
-    "Random Forest": {"n_estimators": [100, 200], "max_depth": [5, 10]},
-    "Gradient Boosting": {"n_estimators": [100, 200], "learning_rate": [0.05, 0.1]},
-    "XGBoost": {"n_estimators": [100, 200], "max_depth": [3, 5]}
+    "Decision Tree": {"max_depth": [3, 5, 10] ,'criterion': ['squared_error', 'friedman_mse', 'absolute_error', 'poisson'],
+       'max_depth': [None, 5, 10, 15, 20],
+       'min_samples_split': [2, 5, 10],
+       'min_samples_leaf': [1, 2, 4]},
+    "Random Forest": {"n_estimators": [100, 200], "max_depth": [5, 10], 
+    "min_samples_split": [2, 5],
+    "min_samples_leaf": [1, 2]
+},
+    "Gradient Boosting": {"n_estimators": [100, 200], "learning_rate": [0.01, 0.1],'criterion': ['friedman_mse', 'squared_error', 'absolute_error'],'max_depth': [3, 5]},
+    "XGBoost": {"n_estimators": [100, 200], "max_depth": [3, 5, 7],
+    'learning_rate': [0.01, 0.1]}
 }
 
 run_tuned = st.sidebar.checkbox("Run tuned models (GridSearch)", True)
