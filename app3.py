@@ -29,7 +29,7 @@ RESULTS_PATH = os.path.join(ART_DIR, "results.csv")
 MODEL_PATH = os.path.join(ART_DIR, "best_model.pkl")
 SCALER_PATH = os.path.join(ART_DIR, "scaler.pkl")
 FEATURES_PATH = os.path.join(ART_DIR, "feature_names.json")
-DATA_PATH = "price.csv" 
+DEFAULT_MERGED_DATA_PATH = "price.csv" 
 
 # Column names
 COL_DATE, COL_PRICE, COL_PROD, COL_EXPORT, COL_PRECIP = "Date", "Price", "Index Production", "Export Number (in Tonnes)", "Precip"
